@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { Transaction, PartnerConfig, TransactionOwner } from '../types/finance';
 import { DEFAULT_PARTNERS, INITIAL_TRANSACTIONS } from '../data/defaultData';
 import { 
@@ -9,7 +9,8 @@ import {
   deleteSupabaseTransaction,
   bulkUploadToSupabase 
 } from '../lib/supabase';
-import { getCurrentMonthString } from '../utils/formatters';
+import { getCurrentMonthString, formatCurrency } from '../utils/formatters';
+import { playSyncChime } from '../utils/sound';
 
 interface FinanceContextType {
   transactions: Transaction[];
@@ -18,6 +19,7 @@ interface FinanceContextType {
   selectedMonth: string; // 'YYYY-MM'
   filterOwner: 'all' | 'partner1' | 'partner2' | 'shared';
   searchQuery: string;
+  connectedDevices: number;
   supabaseStatus: {
     isConfigured: boolean;
     isConnected: boolean;
@@ -26,6 +28,8 @@ interface FinanceContextType {
     lastEventTime?: string;
   };
   notification: string | null;
+  soundEnabled: boolean;
+  setSoundEnabled: (val: boolean) => void;
   setActiveDeviceUser: (user: 'partner1' | 'partner2') => void;
   setSelectedMonth: (month: string) => void;
   setFilterOwner: (owner: 'all' | 'partner1' | 'partner2' | 'shared') => void;
@@ -42,6 +46,7 @@ interface FinanceContextType {
 const LOCAL_STORAGE_TX_KEY = 'financas_casal_transactions';
 const LOCAL_STORAGE_PARTNERS_KEY = 'financas_casal_partners';
 const LOCAL_STORAGE_DEVICE_USER_KEY = 'financas_casal_device_user';
+const LOCAL_STORAGE_SOUND_KEY = 'financas_casal_sound';
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
@@ -66,6 +71,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return 'partner1';
   });
 
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_SOUND_KEY);
+      if (stored !== null) return stored === 'true';
+    } catch (e) {}
+    return true;
+  });
+
+  const setSoundEnabled = (val: boolean) => {
+    setSoundEnabledState(val);
+    localStorage.setItem(LOCAL_STORAGE_SOUND_KEY, String(val));
+  };
+
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_TX_KEY);
@@ -80,6 +98,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [filterOwner, setFilterOwner] = useState<'all' | 'partner1' | 'partner2' | 'shared'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [notification, setNotification] = useState<string | null>(null);
+  const [connectedDevices, setConnectedDevices] = useState<number>(1);
 
   const [supabaseStatus, setSupabaseStatus] = useState<{
     isConfigured: boolean;
@@ -93,6 +112,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isSyncing: false,
     error: null,
   });
+
+  const clientIdRef = useRef<string>(`client-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
 
   const setActiveDeviceUser = (user: 'partner1' | 'partner2') => {
     setActiveDeviceUserState(user);
@@ -109,7 +130,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const dismissNotification = () => setNotification(null);
 
-  // Sync to local storage as fallback/cache
+  // Sync to local storage
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_STORAGE_TX_KEY, JSON.stringify(transactions));
@@ -118,7 +139,114 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [transactions]);
 
-  // Check Supabase connection and load remote transactions
+  // Load from backend API initially
+  const loadInitialData = useCallback(async () => {
+    try {
+      const res = await fetch('/api/transactions');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.transactions) && json.transactions.length > 0) {
+          setTransactions(json.transactions);
+        }
+      }
+    } catch (e) {
+      console.log('Modo client-only ou offline ativo');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  // 1. Instant Realtime SSE (Server-Sent Events) synchronization across devices
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: any = null;
+
+    function connectSSE() {
+      try {
+        eventSource = new EventSource('/api/events');
+
+        eventSource.onopen = () => {
+          // Connected to SSE stream
+        };
+
+        eventSource.addEventListener('connected', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.connectedDevices) {
+              setConnectedDevices(data.connectedDevices);
+            }
+          } catch (err) {}
+        });
+
+        eventSource.onmessage = (e: MessageEvent) => {
+          try {
+            const payload = JSON.parse(e.data);
+            if (!payload || !payload.eventType) return;
+
+            if (payload.eventType === 'CONNECTED_DEVICES') {
+              setConnectedDevices(payload.count || 1);
+              return;
+            }
+
+            if (payload.eventType === 'INSERT') {
+              const newTx = payload.data as Transaction;
+              setTransactions(prev => {
+                if (prev.some(t => t.id === newTx.id)) return prev;
+                return [newTx, ...prev];
+              });
+
+              if (soundEnabled) {
+                playSyncChime();
+              }
+
+              const author = newTx.owner === 'partner1'
+                ? partners.partner1Name
+                : (newTx.owner === 'partner2' ? partners.partner2Name : 'Compartilhado');
+
+              setNotification(
+                `⚡ Sincronizado agora: ${author} adicionou "${newTx.description}" (${formatCurrency(newTx.amount)})`
+              );
+            } else if (payload.eventType === 'UPDATE') {
+              const updatedTx = payload.data as Transaction;
+              setTransactions(prev =>
+                prev.map(t => (t.id === updatedTx.id ? updatedTx : t))
+              );
+              setNotification(`⚡ Sincronizado agora: "${updatedTx.description}" foi atualizado`);
+            } else if (payload.eventType === 'DELETE') {
+              const { id } = payload.data;
+              setTransactions(prev => prev.filter(t => t.id !== id));
+              setNotification(`⚡ Sincronizado agora: um lançamento foi excluído`);
+            } else if (payload.eventType === 'RELOAD') {
+              if (Array.isArray(payload.data?.transactions)) {
+                setTransactions(payload.data.transactions);
+              }
+            }
+          } catch (err) {
+            console.error('Erro ao processar mensagem SSE', err);
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource?.close();
+          // Auto-reconnect in 3s
+          reconnectTimeout = setTimeout(connectSSE, 3000);
+        };
+      } catch (err) {
+        // SSE not supported or offline
+      }
+    }
+
+    connectSSE();
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, [partners.partner1Name, partners.partner2Name, soundEnabled]);
+
+  // 2. Supabase Realtime synchronization setup
   const loadSupabaseData = useCallback(async () => {
     const config = getStoredSupabaseConfig();
     if (!config?.url || !config?.anonKey) {
@@ -141,7 +269,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isSyncing: false,
         error,
       });
-    } else if (data) {
+    } else if (data && data.length > 0) {
       setTransactions(data);
       setSupabaseStatus({
         isConfigured: true,
@@ -150,6 +278,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         error: null,
         lastEventTime: new Date().toLocaleTimeString('pt-BR'),
       });
+    } else {
+      setSupabaseStatus({
+        isConfigured: true,
+        isConnected: true,
+        isSyncing: false,
+        error: null,
+      });
     }
   }, []);
 
@@ -157,7 +292,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     loadSupabaseData();
   }, [loadSupabaseData]);
 
-  // Realtime subscription setup
+  // Supabase Realtime WebSocket subscription
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) return;
@@ -204,9 +339,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               return [newTx, ...prev];
             });
 
-            // Show friendly notification if added by partner
-            const partnerName = newTx.owner === 'partner1' ? partners.partner1Name : (newTx.owner === 'partner2' ? partners.partner2Name : 'Compartilhado');
-            setNotification(`⚡ Sincronizado em tempo real: "${newTx.description}" (${partnerName})`);
+            if (soundEnabled) {
+              playSyncChime();
+            }
+
+            const author = newTx.owner === 'partner1'
+              ? partners.partner1Name
+              : (newTx.owner === 'partner2' ? partners.partner2Name : 'Compartilhado');
+
+            setNotification(`⚡ Sincronizado via Supabase: ${author} adicionou "${newTx.description}"`);
           } else if (payload.eventType === 'UPDATE') {
             const updatedRow = payload.new as any;
             const updatedTx: Transaction = {
@@ -250,7 +391,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isSubscribed = false;
       client.removeChannel(channel);
     };
-  }, [partners.partner1Name, partners.partner2Name]);
+  }, [partners.partner1Name, partners.partner2Name, soundEnabled, supabaseStatus.isConfigured]);
 
   // Actions
   const addTransaction = async (data: Omit<Transaction, 'id'>): Promise<boolean> => {
@@ -260,10 +401,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically update local state
+    // 1. Optimistic local update
     setTransactions(prev => [newTx, ...prev]);
 
-    // If Supabase is connected, save to Supabase
+    // 2. Broadcast immediately via backend server API to all open devices
+    try {
+      fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(newTx),
+      }).catch(e => console.error('Erro na sincronização backend', e));
+    } catch (e) {}
+
+    // 3. If Supabase is connected, save to Supabase
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
       const { error } = await saveSupabaseTransaction(newTx);
@@ -278,6 +431,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateTransaction = async (tx: Transaction): Promise<boolean> => {
     setTransactions(prev => prev.map(t => (t.id === tx.id ? tx : t)));
+
+    // Broadcast via backend API
+    try {
+      fetch(`/api/transactions/${tx.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(tx),
+      }).catch(e => console.error('Erro na sincronização backend', e));
+    } catch (e) {}
 
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
@@ -294,6 +459,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const deleteTransaction = async (id: string): Promise<boolean> => {
     setTransactions(prev => prev.filter(t => t.id !== id));
 
+    // Broadcast via backend API
+    try {
+      fetch(`/api/transactions/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-client-id': clientIdRef.current,
+        },
+      }).catch(e => console.error('Erro na sincronização backend', e));
+    } catch (e) {}
+
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
       const { error } = await deleteSupabaseTransaction(id);
@@ -307,6 +482,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const refreshTransactions = async () => {
+    await loadInitialData();
     await loadSupabaseData();
   };
 
@@ -329,8 +505,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         selectedMonth,
         filterOwner,
         searchQuery,
+        connectedDevices,
         supabaseStatus,
         notification,
+        soundEnabled,
+        setSoundEnabled,
         setActiveDeviceUser,
         setSelectedMonth,
         setFilterOwner,

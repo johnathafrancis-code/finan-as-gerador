@@ -14,10 +14,11 @@ import { TransactionModal } from './components/TransactionModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Transaction } from './types/finance';
-import { Zap, X, Shield, ArrowRight, Plus } from 'lucide-react';
+import { Zap, X, Shield, ArrowRight, Plus, Radio, Sparkles } from 'lucide-react';
+import { getTodayString } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
-  const { notification, dismissNotification, supabaseStatus, partners } = useFinance();
+  const { notification, dismissNotification, supabaseStatus, partners, activeDeviceUser, addTransaction, connectedDevices } = useFinance();
 
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement'>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
@@ -39,6 +40,31 @@ const DashboardContent: React.FC = () => {
   const handleSelectCategory = (catId: string) => {
     setSelectedCategoryFilter(catId);
     setCurrentTab('transactions');
+  };
+
+  const handleSimulatePartnerSync = async () => {
+    const isP1 = activeDeviceUser === 'partner1';
+    const targetOwner = isP1 ? 'partner2' : 'partner1';
+    const authorName = isP1 ? partners.partner2Name : partners.partner1Name;
+    const samples = [
+      { desc: 'Farmácia (Remédios)', amount: 64.90, cat: 'saude' },
+      { desc: 'Supermercado (Feira da Semana)', amount: 135.50, cat: 'supermercado' },
+      { desc: 'Cafeteria & Lanche', amount: 28.00, cat: 'restaurante' },
+      { desc: 'Uber para o Trabalho', amount: 24.80, cat: 'transporte' },
+    ];
+    const pick = samples[Math.floor(Math.random() * samples.length)];
+
+    await addTransaction({
+      description: pick.desc,
+      amount: pick.amount,
+      type: 'expense',
+      category: pick.cat,
+      owner: targetOwner,
+      date: getTodayString(),
+      payment_method: 'pix',
+      status: 'paid',
+      notes: `Lançado pelo celular de ${authorName} para testar a sincronização imediata`,
+    });
   };
 
   return (
@@ -97,6 +123,32 @@ const DashboardContent: React.FC = () => {
         {/* TAB 1: DASHBOARD (VISÃO GERAL) */}
         {currentTab === 'dashboard' && (
           <div className="space-y-6">
+            {/* Live Sync Quick Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                </span>
+                <span className="text-slate-300 font-medium">
+                  Sincronização instantânea ativa:
+                </span>
+                <span className="text-slate-400">
+                  Qualquer lançamento feito por você ou por {partners.partner2Name} aparece na hora em ambos os celulares.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSimulatePartnerSync}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto shrink-0"
+                title={`Simula ${activeDeviceUser === 'partner1' ? partners.partner2Name : partners.partner1Name} cadastrando um gasto no celular dela agora`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Simular Lançamento da Esposa (Teste)</span>
+              </button>
+            </div>
+
             {/* Overview KPI Metrics & Month Navigator */}
             <OverviewMetrics />
 

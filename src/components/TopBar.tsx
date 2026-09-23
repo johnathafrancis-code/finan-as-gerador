@@ -1,6 +1,6 @@
 import React from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { Plus, Database, Settings, RefreshCw, Smartphone } from 'lucide-react';
+import { Plus, Database, Settings, RefreshCw, Smartphone, Volume2, VolumeX, Radio } from 'lucide-react';
 
 interface TopBarProps {
   onOpenNewTransaction: () => void;
@@ -17,7 +17,16 @@ export const TopBar: React.FC<TopBarProps> = ({
   currentTab,
   setCurrentTab,
 }) => {
-  const { partners, activeDeviceUser, setActiveDeviceUser, supabaseStatus, refreshTransactions } = useFinance();
+  const {
+    partners,
+    activeDeviceUser,
+    setActiveDeviceUser,
+    supabaseStatus,
+    refreshTransactions,
+    connectedDevices,
+    soundEnabled,
+    setSoundEnabled,
+  } = useFinance();
 
   const activeAvatar = activeDeviceUser === 'partner1' ? partners.partner1Avatar : partners.partner2Avatar;
   const activeName = activeDeviceUser === 'partner1' ? partners.partner1Name : partners.partner2Name;
@@ -51,7 +60,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveDeviceUser('partner1')}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer ${
                   activeDeviceUser === 'partner1'
                     ? 'bg-slate-700 text-white font-medium shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
@@ -71,7 +80,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveDeviceUser('partner2')}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors ${
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer ${
                   activeDeviceUser === 'partner2'
                     ? 'bg-slate-700 text-white font-medium shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
@@ -137,7 +146,31 @@ export const TopBar: React.FC<TopBarProps> = ({
         </nav>
 
         {/* Zone 3: Primary actions & connection status */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Live Sync Status Pill */}
+          <div
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px] text-slate-300"
+            title="Sincronização instantânea ativa entre dispositivos conectados"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            <span className="font-mono">
+              {connectedDevices > 1 ? `${connectedDevices} Aparelhos ao Vivo` : 'Tempo Real Ativo'}
+            </span>
+          </div>
+
+          {/* Sound toggle */}
+          <button
+            type="button"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer"
+            title={soundEnabled ? 'Aviso sonoro ativado quando houver novos lançamentos' : 'Aviso sonoro desativado'}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+          </button>
+
           {/* Supabase status indicator button */}
           <button
             type="button"
@@ -151,45 +184,19 @@ export const TopBar: React.FC<TopBarProps> = ({
             }`}
             title={
               supabaseStatus.isConnected
-                ? 'Supabase conectado: Tempo real ativo entre os aparelhos'
-                : 'Clique para configurar ou conectar o Supabase'
+                ? 'Supabase conectado: sincronização contínua com banco de dados ativa'
+                : 'Clique para conectar banco Supabase'
             }
           >
-            <span className="relative flex h-2 w-2">
-              {supabaseStatus.isConnected && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              )}
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  supabaseStatus.isConnected
-                    ? 'bg-emerald-400'
-                    : supabaseStatus.isConfigured
-                    ? 'bg-amber-400'
-                    : 'bg-slate-400'
-                }`}
-              ></span>
-            </span>
+            <Database className="w-3.5 h-3.5 opacity-80" />
             <span className="hidden sm:inline">
               {supabaseStatus.isConnected
-                ? 'Supabase Ativo'
+                ? 'Supabase Conectado'
                 : supabaseStatus.isConfigured
-                ? 'Verificando...'
-                : 'Conectar Supabase'}
+                ? 'Conectando...'
+                : 'Supabase'}
             </span>
-            <Database className="w-3.5 h-3.5 opacity-80" />
           </button>
-
-          {/* Quick refresh if connected */}
-          {supabaseStatus.isConnected && (
-            <button
-              type="button"
-              onClick={() => refreshTransactions()}
-              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer"
-              title="Atualizar dados do Supabase"
-            >
-              <RefreshCw className={`w-4 h-4 ${supabaseStatus.isSyncing ? 'animate-spin text-emerald-400' : ''}`} />
-            </button>
-          )}
 
           {/* Settings button */}
           <button
