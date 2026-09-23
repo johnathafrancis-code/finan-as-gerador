@@ -28,7 +28,7 @@ export interface Transaction {
 
 export interface PartnerConfig {
   partner1Name: string; // e.g., 'Johnatha'
-  partner2Name: string; // e.g., 'Esposa'
+  partner2Name: string; // e.g., 'Raisa'
   partner1Avatar?: string;
   partner2Avatar?: string;
   splitRatio: number; // 0.5 = 50%/50%

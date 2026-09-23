@@ -4,7 +4,7 @@ import wifeAvatar from '../assets/images/avatar_wife_1790170478072.jpg';
 
 export const DEFAULT_PARTNERS: PartnerConfig = {
   partner1Name: 'Johnatha',
-  partner2Name: 'Esposa',
+  partner2Name: 'Raisa',
   partner1Avatar: husbandAvatar,
   partner2Avatar: wifeAvatar,
   splitRatio: 0.5, // 50% cada em gastos compartilhados

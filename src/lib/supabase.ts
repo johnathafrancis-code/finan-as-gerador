@@ -289,7 +289,7 @@ create policy "Acesso total as transações do casal"
   with check (true);
 
 -- 4. Habilitar a publicação em Tempo Real (Realtime)
--- Isso garante que toda alteração apareça instantaneamente no celular da sua esposa e no seu!
+-- Isso garante que toda alteração apareça instantaneamente no celular da Raisa e no seu!
 alter publication supabase_realtime add table public.transactions;
 `;
 }

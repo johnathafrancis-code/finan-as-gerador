@@ -22,7 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     e.preventDefault();
     updatePartners({
       partner1Name: p1Name.trim() || 'Johnatha',
-      partner2Name: p2Name.trim() || 'Esposa',
+      partner2Name: p2Name.trim() || 'Raisa',
       splitRatio: splitPercent / 100,
     });
     onClose();

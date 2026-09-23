@@ -379,7 +379,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="Ex: Parcela 1 de 3, pago no cartão da Esposa..."
+              placeholder="Ex: Parcela 1 de 3, pago no cartão da Raisa..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-600 shadow-xs"

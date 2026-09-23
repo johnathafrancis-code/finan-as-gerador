@@ -55,7 +55,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [partners, setPartners] = useState<PartnerConfig>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_PARTNERS_KEY);
-      if (stored) return { ...DEFAULT_PARTNERS, ...JSON.parse(stored) };
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.partner2Name === 'Esposa' || !parsed.partner2Name) {
+          parsed.partner2Name = 'Raisa';
+          localStorage.setItem(LOCAL_STORAGE_PARTNERS_KEY, JSON.stringify(parsed));
+        }
+        return { ...DEFAULT_PARTNERS, ...parsed };
+      }
     } catch (e) {
       console.error(e);
     }
