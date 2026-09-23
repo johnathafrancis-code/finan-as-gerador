@@ -16,7 +16,11 @@ import {
   Users,
   X,
   FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
 } from 'lucide-react';
+import { MonthPickerModal } from './MonthPickerModal';
 
 interface TransactionListProps {
   onEditTransaction: (tx: Transaction) => void;
@@ -35,10 +39,14 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     transactions,
     partners,
     selectedMonth,
+    setSelectedMonth,
     deleteTransaction,
     updateTransaction,
     addTransaction,
   } = useFinance();
+
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
+  const transactionMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.slice(0, 7)))), [transactions]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income' | 'pending'>('all');
@@ -127,6 +135,49 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
   return (
     <div className="space-y-3">
+      {/* Month Navigator Bar */}
+      <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200/90 px-3 py-1.5 shadow-xs">
+        <button
+          type="button"
+          onClick={() => {
+            const [year, month] = selectedMonth.split('-').map(Number);
+            const date = new Date(year, month - 2, 1);
+            const prevYear = date.getFullYear();
+            const prevMonth = String(date.getMonth() + 1).padStart(2, '0');
+            setSelectedMonth(`${prevYear}-${prevMonth}`);
+          }}
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+          title="Mês Anterior"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsMonthPickerOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100 active:scale-95 transition-all text-xs font-bold text-slate-800 capitalize tracking-tight cursor-pointer group"
+          title="Clique para abrir o calendário e selecionar o mês"
+        >
+          <Calendar className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+          <span>{formatMonthName(selectedMonth)}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            const [year, month] = selectedMonth.split('-').map(Number);
+            const date = new Date(year, month, 1);
+            const nextYear = date.getFullYear();
+            const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
+            setSelectedMonth(`${nextYear}-${nextMonth}`);
+          }}
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+          title="Próximo Mês"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
       {/* Category filter active indicator */}
       {selectedCategoryFilter && (
         <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
@@ -389,6 +440,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           })
         )}
       </div>
+
+      {/* Month Picker Calendar Modal */}
+      <MonthPickerModal
+        isOpen={isMonthPickerOpen}
+        onClose={() => setIsMonthPickerOpen(false)}
+        selectedMonth={selectedMonth}
+        onSelectMonth={setSelectedMonth}
+        transactionMonths={transactionMonths}
+      />
     </div>
   );
 };

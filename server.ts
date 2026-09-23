@@ -27,11 +27,15 @@ interface TransactionItem {
 // In-memory data store with file persistence
 const DATA_FILE = path.join(__dirname, 'transactions-data.json');
 const VAULT_FILE = path.join(__dirname, 'vault-data.json');
+const LOANS_FILE = path.join(__dirname, 'loans-data.json');
+const CHAT_FILE = path.join(__dirname, 'chat-data.json');
 
 const INITIAL_DATA: TransactionItem[] = [];
 
 let transactions: TransactionItem[] = [];
 let vaultGoals: any[] = [];
+let loans: any[] = [];
+let chatMessages: any[] = [];
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -57,6 +61,30 @@ try {
   vaultGoals = [];
 }
 
+try {
+  if (fs.existsSync(LOANS_FILE)) {
+    const raw = fs.readFileSync(LOANS_FILE, 'utf-8');
+    loans = JSON.parse(raw);
+  } else {
+    loans = [];
+    fs.writeFileSync(LOANS_FILE, JSON.stringify([], null, 2));
+  }
+} catch (e) {
+  loans = [];
+}
+
+try {
+  if (fs.existsSync(CHAT_FILE)) {
+    const raw = fs.readFileSync(CHAT_FILE, 'utf-8');
+    chatMessages = JSON.parse(raw);
+  } else {
+    chatMessages = [];
+    fs.writeFileSync(CHAT_FILE, JSON.stringify([], null, 2));
+  }
+} catch (e) {
+  chatMessages = [];
+}
+
 function persistData() {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(transactions, null, 2));
@@ -70,6 +98,22 @@ function persistVault() {
     fs.writeFileSync(VAULT_FILE, JSON.stringify(vaultGoals, null, 2));
   } catch (err) {
     console.error('Erro ao salvar vault-data.json', err);
+  }
+}
+
+function persistLoans() {
+  try {
+    fs.writeFileSync(LOANS_FILE, JSON.stringify(loans, null, 2));
+  } catch (err) {
+    console.error('Erro ao salvar loans-data.json', err);
+  }
+}
+
+function persistChat() {
+  try {
+    fs.writeFileSync(CHAT_FILE, JSON.stringify(chatMessages, null, 2));
+  } catch (err) {
+    console.error('Erro ao salvar chat-data.json', err);
   }
 }
 
@@ -225,6 +269,59 @@ async function startServer() {
     vaultGoals = vaultGoals.filter(g => g.id !== id);
     persistVault();
     broadcast('VAULT_DELETE', { id, goals: vaultGoals }, req.headers['x-client-id'] as string);
+    res.json({ success: true, id });
+  });
+
+  // 5c. Loans (Dinheiro Emprestado / Empréstimos)
+  app.get('/api/loans', (req, res) => {
+    res.json({ loans });
+  });
+
+  app.post('/api/loans', (req, res) => {
+    const loan = req.body;
+    if (!loan || !loan.id) {
+      return res.status(400).json({ error: 'ID do empréstimo é obrigatório.' });
+    }
+    const idx = loans.findIndex(l => l.id === loan.id);
+    if (idx === -1) {
+      loans = [loan, ...loans];
+    } else {
+      loans[idx] = { ...loans[idx], ...loan, updated_at: new Date().toISOString() };
+    }
+    persistLoans();
+    broadcast('LOAN_UPDATE', { loan: idx === -1 ? loan : loans[idx], loans }, req.headers['x-client-id'] as string);
+    res.json({ success: true, loan: idx === -1 ? loan : loans[idx] });
+  });
+
+  app.delete('/api/loans/:id', (req, res) => {
+    const id = req.params.id;
+    loans = loans.filter(l => l.id !== id);
+    persistLoans();
+    broadcast('LOAN_DELETE', { id, loans }, req.headers['x-client-id'] as string);
+    res.json({ success: true, id });
+  });
+
+  // 5d. Chat / Anotações do Casal (estilo WhatsApp)
+  app.get('/api/chat', (req, res) => {
+    res.json({ messages: chatMessages });
+  });
+
+  app.post('/api/chat', (req, res) => {
+    const msg = req.body;
+    if (!msg || !msg.id || !msg.text) {
+      return res.status(400).json({ error: 'Mensagem inválida.' });
+    }
+    chatMessages.push(msg);
+    persistChat();
+    broadcast('CHAT_MESSAGE', { message: msg, messages: chatMessages }, req.headers['x-client-id'] as string);
+    res.json({ success: true, message: msg });
+  });
+
+  app.delete('/api/chat/:id', (req, res) => {
+    const id = req.params.id;
+    chatMessages = chatMessages.filter(m => m.id !== id);
+    persistChat();
+    broadcast('CHAT_DELETE', { id, messages: chatMessages }, req.headers['x-client-id'] as string);
     res.json({ success: true, id });
   });
 

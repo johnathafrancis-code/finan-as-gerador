@@ -13,7 +13,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
 
   const [p1Name, setP1Name] = useState(partners.partner1Name);
   const [p2Name, setP2Name] = useState(partners.partner2Name);
-  const [splitPercent, setSplitPercent] = useState(Math.round(partners.splitRatio * 100));
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
@@ -24,7 +23,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
     updatePartners({
       partner1Name: p1Name.trim() || 'Johnatha',
       partner2Name: p2Name.trim() || 'Raisa',
-      splitRatio: splitPercent / 100,
     });
     onClose();
   };
@@ -90,30 +88,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                 required
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 shadow-xs"
               />
-            </div>
-
-            {/* Split Ratio Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="font-semibold text-slate-700">
-                  Divisão de Gastos Compartilhados
-                </label>
-                <span className="font-bold text-emerald-700 font-mono">
-                  {splitPercent}% ({p1Name}) / {100 - splitPercent}% ({p2Name})
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={splitPercent}
-                onChange={(e) => setSplitPercent(Number(e.target.value))}
-                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Usado para calcular automaticamente quem deve quanto no acerto de contas. O padrão é 50% / 50%.
-              </p>
             </div>
 
             <button

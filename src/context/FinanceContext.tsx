@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { Transaction, PartnerConfig, TransactionOwner, VaultGoal, VaultDeposit } from '../types/finance';
+import { Transaction, PartnerConfig, TransactionOwner, VaultGoal, VaultDeposit, Loan, LoanPayment, ChatMessage } from '../types/finance';
 import { DEFAULT_PARTNERS, INITIAL_TRANSACTIONS } from '../data/defaultData';
 import { 
   getStoredSupabaseConfig, 
@@ -30,6 +30,7 @@ interface FinanceContextType {
   notification: string | null;
   soundEnabled: boolean;
   vaultGoals: VaultGoal[];
+  loans: Loan[];
   setSoundEnabled: (val: boolean) => void;
   setActiveDeviceUser: (user: 'partner1' | 'partner2') => void;
   setSelectedMonth: (month: string) => void;
@@ -48,6 +49,13 @@ interface FinanceContextType {
   updateVaultGoal: (goal: VaultGoal) => Promise<boolean>;
   deleteVaultGoal: (id: string) => Promise<boolean>;
   addVaultDeposit: (goalId: string, amount: number, type: 'deposit' | 'withdraw', owner: TransactionOwner, notes?: string) => Promise<boolean>;
+  addLoan: (loan: Omit<Loan, 'id' | 'payments' | 'created_at'>) => Promise<boolean>;
+  updateLoan: (loan: Loan) => Promise<boolean>;
+  deleteLoan: (id: string) => Promise<boolean>;
+  payLoan: (loanId: string, amount: number, payer: TransactionOwner, notes?: string) => Promise<boolean>;
+  chatMessages: ChatMessage[];
+  sendChatMessage: (text: string, sender: TransactionOwner) => Promise<boolean>;
+  deleteChatMessage: (id: string) => Promise<boolean>;
 }
 
 const LOCAL_STORAGE_TX_KEY = 'financas_casal_transactions';
@@ -55,6 +63,8 @@ const LOCAL_STORAGE_PARTNERS_KEY = 'financas_casal_partners';
 const LOCAL_STORAGE_DEVICE_USER_KEY = 'financas_casal_device_user';
 const LOCAL_STORAGE_SOUND_KEY = 'financas_casal_sound';
 const LOCAL_STORAGE_VAULT_KEY = 'financas_casal_vault_goals';
+const LOCAL_STORAGE_LOANS_KEY = 'financas_casal_loans';
+const LOCAL_STORAGE_CHAT_KEY = 'financas_casal_chat_messages';
 
 const DEFAULT_VAULT_GOALS: VaultGoal[] = [
   {
@@ -143,6 +153,68 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       .then(data => {
         if (Array.isArray(data.goals) && data.goals.length > 0) {
           setVaultGoals(data.goals);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const [loans, setLoans] = useState<Loan[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_LOANS_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  // Keep localStorage in sync with loans
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_LOANS_KEY, JSON.stringify(loans));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [loans]);
+
+  // Load loans from backend API on mount
+  useEffect(() => {
+    fetch('/api/loans')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.loans) && data.loans.length > 0) {
+          setLoans(data.loans);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_CHAT_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
+
+  // Keep localStorage in sync with chatMessages
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CHAT_KEY, JSON.stringify(chatMessages));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [chatMessages]);
+
+  // Load chat messages from backend API on mount
+  useEffect(() => {
+    fetch('/api/chat')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setChatMessages(data.messages);
         }
       })
       .catch(() => {});
@@ -326,6 +398,47 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 setVaultGoals(prev => prev.filter(g => g.id !== id));
               }
               setNotification('⚡ Caixinha removida do cofre');
+            } else if (payload.eventType === 'LOAN_UPDATE') {
+              const { loan, loans: remoteLoans } = payload.data || {};
+              if (Array.isArray(remoteLoans)) {
+                setLoans(remoteLoans);
+              } else if (loan) {
+                setLoans(prev => {
+                  const idx = prev.findIndex(l => l.id === loan.id);
+                  if (idx !== -1) {
+                    const next = [...prev];
+                    next[idx] = loan;
+                    return next;
+                  }
+                  return [loan, ...prev];
+                });
+              }
+              if (soundEnabled) playSyncChime();
+            } else if (payload.eventType === 'LOAN_DELETE') {
+              const { id, loans: remoteLoans } = payload.data || {};
+              if (Array.isArray(remoteLoans)) {
+                setLoans(remoteLoans);
+              } else if (id) {
+                setLoans(prev => prev.filter(l => l.id !== id));
+              }
+            } else if (payload.eventType === 'CHAT_MESSAGE') {
+              const { message, messages: remoteMessages } = payload.data || {};
+              if (Array.isArray(remoteMessages)) {
+                setChatMessages(remoteMessages);
+              } else if (message) {
+                setChatMessages(prev => {
+                  if (prev.some(m => m.id === message.id)) return prev;
+                  return [...prev, message];
+                });
+              }
+              if (soundEnabled) playSyncChime();
+            } else if (payload.eventType === 'CHAT_DELETE') {
+              const { id, messages: remoteMessages } = payload.data || {};
+              if (Array.isArray(remoteMessages)) {
+                setChatMessages(remoteMessages);
+              } else if (id) {
+                setChatMessages(prev => prev.filter(m => m.id !== id));
+              }
             }
           } catch (err) {
             console.error('Erro ao processar mensagem SSE', err);
@@ -786,6 +899,153 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return true;
   };
 
+  const addLoan = async (
+    loanData: Omit<Loan, 'id' | 'payments' | 'created_at'>
+  ): Promise<boolean> => {
+    const loanId = `loan-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const newLoan: Loan = {
+      ...loanData,
+      id: loanId,
+      paidAmount: loanData.paidAmount || 0,
+      status: loanData.status || 'pending',
+      payments: [],
+      created_at: new Date().toISOString(),
+    };
+
+    setLoans(prev => [newLoan, ...prev]);
+
+    try {
+      fetch('/api/loans', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(newLoan),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+
+    if (soundEnabled) playSyncChime();
+    return true;
+  };
+
+  const updateLoan = async (loan: Loan): Promise<boolean> => {
+    setLoans(prev => prev.map(l => (l.id === loan.id ? loan : l)));
+    try {
+      fetch('/api/loans', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(loan),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+    if (soundEnabled) playSyncChime();
+    return true;
+  };
+
+  const deleteLoan = async (id: string): Promise<boolean> => {
+    setLoans(prev => prev.filter(l => l.id !== id));
+    try {
+      fetch(`/api/loans/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-client-id': clientIdRef.current,
+        },
+      }).catch(e => console.error(e));
+    } catch (e) {}
+    return true;
+  };
+
+  const payLoan = async (
+    loanId: string,
+    amount: number,
+    payer: TransactionOwner,
+    notes?: string
+  ): Promise<boolean> => {
+    const targetLoan = loans.find(l => l.id === loanId);
+    if (!targetLoan) return false;
+
+    const newPayment: LoanPayment = {
+      id: `lpay-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      amount,
+      date: new Date().toISOString().split('T')[0],
+      payer,
+      notes,
+      created_at: new Date().toISOString(),
+    };
+
+    const newPaidAmount = targetLoan.paidAmount + amount;
+    const isFullyPaid = newPaidAmount >= targetLoan.amount;
+
+    const updatedLoan: Loan = {
+      ...targetLoan,
+      paidAmount: Math.min(newPaidAmount, targetLoan.amount),
+      status: isFullyPaid ? 'paid' : 'pending',
+      payments: [newPayment, ...(targetLoan.payments || [])],
+      updated_at: new Date().toISOString(),
+    };
+
+    setLoans(prev => prev.map(l => (l.id === loanId ? updatedLoan : l)));
+
+    try {
+      fetch('/api/loans', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(updatedLoan),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+
+    if (soundEnabled) playSyncChime();
+    return true;
+  };
+
+  const sendChatMessage = async (text: string, sender: TransactionOwner): Promise<boolean> => {
+    const cleanText = text.trim();
+    if (!cleanText) return false;
+    const senderName = sender === 'partner1' ? partners.partner1Name : partners.partner2Name;
+    const newMsg: ChatMessage = {
+      id: `chat-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      sender,
+      senderName,
+      text: cleanText,
+      timestamp: new Date().toISOString(),
+    };
+
+    setChatMessages(prev => [...prev, newMsg]);
+
+    try {
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(newMsg),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+
+    if (soundEnabled) playSyncChime();
+    return true;
+  };
+
+  const deleteChatMessage = async (id: string): Promise<boolean> => {
+    setChatMessages(prev => prev.filter(m => m.id !== id));
+    try {
+      fetch(`/api/chat/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-client-id': clientIdRef.current,
+        },
+      }).catch(e => console.error(e));
+    } catch (e) {}
+    return true;
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -800,6 +1060,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         notification,
         soundEnabled,
         vaultGoals,
+        loans,
+        chatMessages,
         setSoundEnabled,
         setActiveDeviceUser,
         setSelectedMonth,
@@ -818,6 +1080,12 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateVaultGoal,
         deleteVaultGoal,
         addVaultDeposit,
+        addLoan,
+        updateLoan,
+        deleteLoan,
+        payLoan,
+        sendChatMessage,
+        deleteChatMessage,
       }}
     >
       {children}

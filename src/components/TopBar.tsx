@@ -103,42 +103,26 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               type="button"
               onClick={() => setActiveDeviceUser('partner1')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeDeviceUser === 'partner1'
                   ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80 font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
               title={`Este celular pertence a ${partners.partner1Name}`}
             >
-              {partners.partner1Avatar ? (
-                <img
-                  src={partners.partner1Avatar}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="w-4 h-4 rounded-full object-cover ring-1 ring-indigo-200"
-                />
-              ) : null}
               <span>{partners.partner1Name}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveDeviceUser('partner2')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeDeviceUser === 'partner2'
                   ? 'bg-white text-pink-700 shadow-xs border border-slate-200/80 font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
               title={`Este celular pertence a ${partners.partner2Name}`}
             >
-              {partners.partner2Avatar ? (
-                <img
-                  src={partners.partner2Avatar}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  className="w-4 h-4 rounded-full object-cover ring-1 ring-pink-200"
-                />
-              ) : null}
               <span>{partners.partner2Name}</span>
             </button>
           </div>

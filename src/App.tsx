@@ -8,17 +8,17 @@ import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { TopBar } from './components/TopBar';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { OverviewMetrics } from './components/OverviewMetrics';
-import { BalanceSettlementCard } from './components/BalanceSettlementCard';
+import { LoanSummaryCard } from './components/LoanSummaryCard';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
 import { TransactionList } from './components/TransactionList';
+import { LoansView } from './components/LoansView';
 import { VaultView } from './components/VaultView';
+import { ChatView } from './components/ChatView';
 import { TransactionModal } from './components/TransactionModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Transaction } from './types/finance';
 import {
-  ArrowUpRight,
-  ArrowDownLeft,
   ReceiptText,
   ChevronRight,
 } from 'lucide-react';
@@ -30,7 +30,7 @@ const DashboardContent: React.FC = () => {
     partners,
   } = useFinance();
 
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement' | 'vault'>('dashboard');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'loans' | 'vault' | 'chat'>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -74,47 +74,10 @@ const DashboardContent: React.FC = () => {
               {/* Overview Metrics (Month scroller + Balance Card + Partner cards) */}
               <OverviewMetrics />
 
-              {/* Quick Actions Shortcuts */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleOpenNewTransaction}
-                  className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-slate-300 active:scale-[0.98] transition-all flex items-center gap-2.5 cursor-pointer text-left"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-                    <ArrowUpRight className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block leading-tight">
-                      + Despesa
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      Gasto comum ou seu
-                    </span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenNewTransaction}
-                  className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-slate-300 active:scale-[0.98] transition-all flex items-center gap-2.5 cursor-pointer text-left"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                    <ArrowDownLeft className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block leading-tight">
-                      + Receita
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      Salário ou entrada
-                    </span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Balance Settlement (Divisão & Acerto) */}
-              <BalanceSettlementCard />
+              {/* Dinheiro Emprestado (Substitui Divisão & Balanço) */}
+              <LoanSummaryCard
+                onViewAll={() => setCurrentTab('loans')}
+              />
 
               {/* Category Breakdown (Gastos por Categoria) */}
               <CategoryBreakdown onSelectCategory={handleSelectCategory} />
@@ -188,11 +151,10 @@ const DashboardContent: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: DIVISÃO & ACERTO */}
-          {currentTab === 'settlement' && (
+          {/* TAB 3: EMPRESTADO */}
+          {currentTab === 'loans' && (
             <div className="space-y-3.5 animate-in fade-in duration-150">
-              <BalanceSettlementCard />
-              <CategoryBreakdown onSelectCategory={handleSelectCategory} />
+              <LoansView />
             </div>
           )}
 
@@ -200,6 +162,13 @@ const DashboardContent: React.FC = () => {
           {currentTab === 'vault' && (
             <div className="space-y-3.5 animate-in fade-in duration-150">
               <VaultView />
+            </div>
+          )}
+
+          {/* TAB 5: CHAT / ANOTAÇÕES DO CASAL (ESTILO WHATSAPP) */}
+          {currentTab === 'chat' && (
+            <div className="animate-in fade-in duration-150">
+              <ChatView />
             </div>
           )}
         </main>

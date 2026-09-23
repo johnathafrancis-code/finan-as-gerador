@@ -72,3 +72,35 @@ export interface VaultGoal {
   created_at: string;
   updated_at?: string;
 }
+
+export interface LoanPayment {
+  id: string;
+  amount: number;
+  date: string;
+  payer: TransactionOwner;
+  notes?: string;
+  created_at: string;
+}
+
+export interface Loan {
+  id: string;
+  lenderName: string; // Com quem pegou (ex: "Nubank", "Mãe", "Carlos", "Amigo")
+  borrower: TransactionOwner; // Quem pegou (partner1, partner2, ou shared)
+  amount: number; // Quanto foi pego (R$)
+  paidAmount: number; // Quanto já foi amortizado/pago (R$)
+  borrowDate: string; // Data em que pegou (YYYY-MM-DD)
+  dueDate: string; // Quando vai pagar (YYYY-MM-DD)
+  status: 'pending' | 'paid'; // 'pending' (em aberto) ou 'paid' (liquidado)
+  notes?: string;
+  payments: LoanPayment[];
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: TransactionOwner;
+  senderName: string;
+  text: string;
+  timestamp: string;
+}

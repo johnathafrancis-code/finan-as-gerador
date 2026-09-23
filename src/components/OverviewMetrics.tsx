@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { formatCurrency, formatMonthName } from '../utils/formatters';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Users, ArrowUpRight, ArrowDownLeft, Calendar } from 'lucide-react';
+import { MonthPickerModal } from './MonthPickerModal';
 
 export const OverviewMetrics: React.FC = () => {
   const {
@@ -12,6 +13,8 @@ export const OverviewMetrics: React.FC = () => {
     filterOwner,
     setFilterOwner,
   } = useFinance();
+
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
 
   // Month navigation helpers
   const handlePrevMonth = () => {
@@ -32,6 +35,7 @@ export const OverviewMetrics: React.FC = () => {
 
   // Filter transactions for current selected month
   const monthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth));
+  const transactionMonths = Array.from(new Set(transactions.map(t => t.date.slice(0, 7))));
 
   // Transactions filtered by perspective
   const filteredTransactions = monthTransactions.filter(t => {
@@ -79,9 +83,15 @@ export const OverviewMetrics: React.FC = () => {
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        <span className="text-xs font-bold text-slate-800 capitalize tracking-tight">
-          {formatMonthName(selectedMonth)}
-        </span>
+        <button
+          type="button"
+          onClick={() => setIsMonthPickerOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100 active:scale-95 transition-all text-xs font-bold text-slate-800 capitalize tracking-tight cursor-pointer group"
+          title="Clique para abrir o calendário e selecionar o mês"
+        >
+          <Calendar className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+          <span>{formatMonthName(selectedMonth)}</span>
+        </button>
 
         <button
           type="button"
@@ -232,6 +242,15 @@ export const OverviewMetrics: React.FC = () => {
           </div>
         </div>
       ) : null}
+
+      {/* Month Picker Calendar Modal */}
+      <MonthPickerModal
+        isOpen={isMonthPickerOpen}
+        onClose={() => setIsMonthPickerOpen(false)}
+        selectedMonth={selectedMonth}
+        onSelectMonth={setSelectedMonth}
+        transactionMonths={transactionMonths}
+      />
     </div>
   );
 };
