@@ -26,10 +26,12 @@ interface TransactionItem {
 
 // In-memory data store with file persistence
 const DATA_FILE = path.join(__dirname, 'transactions-data.json');
+const VAULT_FILE = path.join(__dirname, 'vault-data.json');
 
 const INITIAL_DATA: TransactionItem[] = [];
 
 let transactions: TransactionItem[] = [];
+let vaultGoals: any[] = [];
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -43,11 +45,31 @@ try {
   transactions = [];
 }
 
+try {
+  if (fs.existsSync(VAULT_FILE)) {
+    const raw = fs.readFileSync(VAULT_FILE, 'utf-8');
+    vaultGoals = JSON.parse(raw);
+  } else {
+    vaultGoals = [];
+    fs.writeFileSync(VAULT_FILE, JSON.stringify([], null, 2));
+  }
+} catch (e) {
+  vaultGoals = [];
+}
+
 function persistData() {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(transactions, null, 2));
   } catch (err) {
     console.error('Erro ao salvar transactions-data.json', err);
+  }
+}
+
+function persistVault() {
+  try {
+    fs.writeFileSync(VAULT_FILE, JSON.stringify(vaultGoals, null, 2));
+  } catch (err) {
+    console.error('Erro ao salvar vault-data.json', err);
   }
 }
 
@@ -175,6 +197,35 @@ async function startServer() {
       broadcast('RELOAD', { transactions }, req.headers['x-client-id'] as string);
     }
     res.json({ success: true, count: transactions.length });
+  });
+
+  // 5b. Vault (Cofre & Caixinhas de Metas)
+  app.get('/api/vault', (req, res) => {
+    res.json({ goals: vaultGoals });
+  });
+
+  app.post('/api/vault', (req, res) => {
+    const goal = req.body;
+    if (!goal || !goal.id) {
+      return res.status(400).json({ error: 'ID do cofre é obrigatório.' });
+    }
+    const idx = vaultGoals.findIndex(g => g.id === goal.id);
+    if (idx === -1) {
+      vaultGoals = [goal, ...vaultGoals];
+    } else {
+      vaultGoals[idx] = { ...vaultGoals[idx], ...goal, updated_at: new Date().toISOString() };
+    }
+    persistVault();
+    broadcast('VAULT_UPDATE', { goal: idx === -1 ? goal : vaultGoals[idx], goals: vaultGoals }, req.headers['x-client-id'] as string);
+    res.json({ success: true, goal: idx === -1 ? goal : vaultGoals[idx] });
+  });
+
+  app.delete('/api/vault/:id', (req, res) => {
+    const id = req.params.id;
+    vaultGoals = vaultGoals.filter(g => g.id !== id);
+    persistVault();
+    broadcast('VAULT_DELETE', { id, goals: vaultGoals }, req.headers['x-client-id'] as string);
+    res.json({ success: true, id });
   });
 
   // 6. Real-time Server-Sent Events (SSE) stream for instant synchronization

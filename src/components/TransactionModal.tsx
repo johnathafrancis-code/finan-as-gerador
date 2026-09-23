@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Transaction, TransactionType, TransactionOwner, PaymentMethod, TransactionStatus } from '../types/finance';
 import { DEFAULT_CATEGORIES, PAYMENT_METHOD_LABELS } from '../data/defaultData';
-import { getTodayString } from '../utils/formatters';
-import { X, Check, ArrowDownLeft, ArrowUpRight, Users } from 'lucide-react';
+import { getTodayString, addMonthsToDate, formatCurrency, formatMonthName } from '../utils/formatters';
+import { X, Check, ArrowDownLeft, ArrowUpRight, Users, CreditCard, Calendar } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   onClose,
   transactionToEdit,
 }) => {
-  const { partners, activeDeviceUser, addTransaction, updateTransaction } = useFinance();
+  const { partners, activeDeviceUser, addTransaction, addTransactions, updateTransaction } = useFinance();
 
   const [type, setType] = useState<TransactionType>('expense');
   const [description, setDescription] = useState('');
@@ -26,13 +26,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [date, setDate] = useState(getTodayString());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
   const [status, setStatus] = useState<TransactionStatus>('paid');
+  const [installments, setInstallments] = useState(1);
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Suggestions
-  const expenseSuggestions = ['Supermercado', 'Aluguel / Condomínio', 'Energia Elétrica', 'Internet', 'Restaurante / Lanche', 'Combustível', 'Farmácia'];
-  const incomeSuggestions = ['Salário Mensal', 'Freelance / Extra', 'Rendimentos', 'Reembolso'];
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -45,6 +42,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setPaymentMethod(transactionToEdit.payment_method);
       setStatus(transactionToEdit.status);
       setNotes(transactionToEdit.notes || '');
+      setInstallments(1);
     } else {
       setType('expense');
       setDescription('');
@@ -55,6 +53,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setPaymentMethod('pix');
       setStatus('paid');
       setNotes('');
+      setInstallments(1);
     }
     setErrorMessage(null);
   }, [transactionToEdit, isOpen, activeDeviceUser]);
@@ -91,6 +90,34 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           status,
           notes: notes.trim() || undefined,
         });
+      } else if (type === 'expense' && paymentMethod === 'cartao_credito' && installments > 1) {
+        // Multi-installment creation across subsequent months
+        const baseParcel = +(numericAmount / installments).toFixed(2);
+        const remainder = +(numericAmount - (baseParcel * installments)).toFixed(2);
+
+        const items: Omit<Transaction, 'id'>[] = [];
+        for (let i = 0; i < installments; i++) {
+          const isFirst = i === 0;
+          const currentParcelAmount = isFirst ? +(baseParcel + remainder).toFixed(2) : baseParcel;
+          const parcelDate = addMonthsToDate(date, i);
+          const parcelNum = i + 1;
+
+          items.push({
+            description: `${description.trim()} (${parcelNum}/${installments})`,
+            amount: currentParcelAmount,
+            type: 'expense',
+            category,
+            owner,
+            date: parcelDate,
+            payment_method: 'cartao_credito',
+            status: isFirst ? status : 'pending',
+            notes: notes.trim()
+              ? `${notes.trim()} · Parcela ${parcelNum}/${installments}`
+              : `Parcela ${parcelNum}/${installments} no cartão de crédito`,
+          });
+        }
+
+        await addTransactions(items);
       } else {
         await addTransaction({
           description: description.trim(),
@@ -211,19 +238,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               required
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-600 transition-colors shadow-xs"
             />
-            {/* Quick chips */}
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {(type === 'expense' ? expenseSuggestions : incomeSuggestions).map(sug => (
-                <button
-                  type="button"
-                  key={sug}
-                  onClick={() => setDescription(sug)}
-                  className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] transition-colors cursor-pointer"
-                >
-                  {sug}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Quem Pagou / Quem Recebeu */}
@@ -371,6 +385,70 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Credit Card Installments */}
+          {type === 'expense' && paymentMethod === 'cartao_credito' && !transactionToEdit && (
+            <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-emerald-600" />
+                  <span>Quantas parcelas foram comprometidas?</span>
+                </label>
+                {installments > 1 && (
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-lg border border-emerald-200">
+                    {installments}x no Cartão
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <select
+                  value={installments}
+                  onChange={(e) => setInstallments(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-600 text-xs shadow-xs"
+                >
+                  <option value={1}>1x (À vista no cartão)</option>
+                  <option value={2}>2x (2 parcelas)</option>
+                  <option value={3}>3x (3 parcelas)</option>
+                  <option value={4}>4x (4 parcelas)</option>
+                  <option value={5}>5x (5 parcelas)</option>
+                  <option value={6}>6x (6 parcelas)</option>
+                  <option value={7}>7x (7 parcelas)</option>
+                  <option value={8}>8x (8 parcelas)</option>
+                  <option value={9}>9x (9 parcelas)</option>
+                  <option value={10}>10x (10 parcelas)</option>
+                  <option value={11}>11x (11 parcelas)</option>
+                  <option value={12}>12x (12 parcelas)</option>
+                  <option value={15}>15x (15 parcelas)</option>
+                  <option value={18}>18x (18 parcelas)</option>
+                  <option value={24}>24x (24 parcelas)</option>
+                  <option value={36}>36x (36 parcelas)</option>
+                  <option value={48}>48x (48 parcelas)</option>
+                </select>
+              </div>
+
+              {installments > 1 && (
+                <div className="pt-2 border-t border-slate-200/80 space-y-2 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Valor de cada parcela:</span>
+                    <span className="font-bold font-mono text-slate-900 text-xs">
+                      {installments}x de {formatCurrency(Math.max(0, (parseFloat(amountStr.replace(',', '.')) || 0) / installments))}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[11px] space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                      <span>Lançamentos automáticos para os meses seguintes:</span>
+                    </div>
+                    <p className="text-[10.5px] text-emerald-800 leading-relaxed">
+                      A 1ª parcela entra no mês atual (<b>{formatMonthName(date.substring(0, 7))}</b>) e as outras {installments - 1} parcelas já serão agendadas mês a mês até <b>{formatMonthName(addMonthsToDate(date, installments - 1).substring(0, 7))}</b>.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Notes */}
           <div>

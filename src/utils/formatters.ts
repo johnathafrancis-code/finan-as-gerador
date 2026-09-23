@@ -35,3 +35,22 @@ export function getCurrentMonthString(): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
 }
+
+export function addMonthsToDate(dateString: string, monthsToAdd: number): string {
+  if (!dateString) return dateString;
+  const [yearStr, monthStr, dayStr] = dateString.split('-');
+  const baseYear = parseInt(yearStr, 10);
+  const baseMonth = parseInt(monthStr, 10) - 1;
+  const baseDay = parseInt(dayStr, 10);
+
+  const targetYear = baseYear + Math.floor((baseMonth + monthsToAdd) / 12);
+  const targetMonth = ((baseMonth + monthsToAdd) % 12 + 12) % 12;
+
+  const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const targetDay = Math.min(baseDay, daysInMonth);
+
+  const yyyy = targetYear;
+  const mm = String(targetMonth + 1).padStart(2, '0');
+  const dd = String(targetDay).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}

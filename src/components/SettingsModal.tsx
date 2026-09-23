@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { X, Check, HeartHandshake, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Check, HeartHandshake, Trash2, AlertTriangle, Database } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenSupabase?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { partners, updatePartners, clearAllTransactions, transactions } = useFinance();
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onOpenSupabase }) => {
+  const { partners, updatePartners, clearAllTransactions, transactions, supabaseStatus } = useFinance();
 
   const [p1Name, setP1Name] = useState(partners.partner1Name);
   const [p2Name, setP2Name] = useState(partners.partner2Name);
@@ -123,6 +124,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               <span>Salvar Alterações</span>
             </button>
           </form>
+
+          {/* Cloud Supabase Sync Shortcut */}
+          {onOpenSupabase && (
+            <div className="pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={onOpenSupabase}
+                className="w-full p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left flex items-center justify-between cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                    <Database className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Conexão em Tempo Real (Supabase)
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {supabaseStatus.isConnected ? 'Conectado à nuvem' : 'Configurar sincronização'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-semibold text-emerald-700">
+                  {supabaseStatus.isConnected ? 'Ativo' : 'Conectar'}
+                </span>
+              </button>
+            </div>
+          )}
 
           {/* Danger Zone: Zerar Dados */}
           <div className="pt-4 border-t border-slate-100 space-y-3">

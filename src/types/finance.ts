@@ -48,3 +48,27 @@ export interface Category {
   color: string;
   type: TransactionType;
 }
+
+export interface VaultDeposit {
+  id: string;
+  amount: number;
+  type: 'deposit' | 'withdraw';
+  date: string;
+  owner: TransactionOwner;
+  notes?: string;
+  created_at: string;
+}
+
+export interface VaultGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  color: string;
+  icon?: string;
+  deadline?: string;
+  notes?: string;
+  deposits: VaultDeposit[];
+  created_at: string;
+  updated_at?: string;
+}

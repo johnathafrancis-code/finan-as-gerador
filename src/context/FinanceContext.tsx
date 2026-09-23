@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { Transaction, PartnerConfig, TransactionOwner } from '../types/finance';
+import { Transaction, PartnerConfig, TransactionOwner, VaultGoal, VaultDeposit } from '../types/finance';
 import { DEFAULT_PARTNERS, INITIAL_TRANSACTIONS } from '../data/defaultData';
 import { 
   getStoredSupabaseConfig, 
@@ -29,12 +29,14 @@ interface FinanceContextType {
   };
   notification: string | null;
   soundEnabled: boolean;
+  vaultGoals: VaultGoal[];
   setSoundEnabled: (val: boolean) => void;
   setActiveDeviceUser: (user: 'partner1' | 'partner2') => void;
   setSelectedMonth: (month: string) => void;
   setFilterOwner: (owner: 'all' | 'partner1' | 'partner2' | 'shared') => void;
   setSearchQuery: (q: string) => void;
   addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<boolean>;
+  addTransactions: (items: Omit<Transaction, 'id'>[]) => Promise<boolean>;
   updateTransaction: (tx: Transaction) => Promise<boolean>;
   deleteTransaction: (id: string) => Promise<boolean>;
   updatePartners: (config: Partial<PartnerConfig>) => void;
@@ -42,12 +44,40 @@ interface FinanceContextType {
   migrateLocalToSupabase: () => Promise<{ count: number; error: string | null }>;
   clearAllTransactions: () => Promise<void>;
   dismissNotification: () => void;
+  addVaultGoal: (goal: Omit<VaultGoal, 'id' | 'deposits' | 'created_at'>, initialDeposit?: number) => Promise<boolean>;
+  updateVaultGoal: (goal: VaultGoal) => Promise<boolean>;
+  deleteVaultGoal: (id: string) => Promise<boolean>;
+  addVaultDeposit: (goalId: string, amount: number, type: 'deposit' | 'withdraw', owner: TransactionOwner, notes?: string) => Promise<boolean>;
 }
 
 const LOCAL_STORAGE_TX_KEY = 'financas_casal_transactions';
 const LOCAL_STORAGE_PARTNERS_KEY = 'financas_casal_partners';
 const LOCAL_STORAGE_DEVICE_USER_KEY = 'financas_casal_device_user';
 const LOCAL_STORAGE_SOUND_KEY = 'financas_casal_sound';
+const LOCAL_STORAGE_VAULT_KEY = 'financas_casal_vault_goals';
+
+const DEFAULT_VAULT_GOALS: VaultGoal[] = [
+  {
+    id: 'vault-1',
+    name: 'Reserva de Emergência',
+    targetAmount: 10000,
+    currentAmount: 0,
+    color: 'emerald',
+    notes: 'Reserva de segurança para imprevistos do casal',
+    deposits: [],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'vault-2',
+    name: 'Viagem de Férias',
+    targetAmount: 5000,
+    currentAmount: 0,
+    color: 'sky',
+    notes: 'Nossas próximas férias juntos',
+    deposits: [],
+    created_at: new Date().toISOString(),
+  },
+];
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
@@ -86,6 +116,37 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (e) {}
     return true;
   });
+
+  const [vaultGoals, setVaultGoals] = useState<VaultGoal[]>(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_VAULT_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    return DEFAULT_VAULT_GOALS;
+  });
+
+  // Keep localStorage in sync with vaultGoals
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_VAULT_KEY, JSON.stringify(vaultGoals));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [vaultGoals]);
+
+  // Load vault goals from backend API on mount
+  useEffect(() => {
+    fetch('/api/vault')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.goals) && data.goals.length > 0) {
+          setVaultGoals(data.goals);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const setSoundEnabled = (val: boolean) => {
     setSoundEnabledState(val);
@@ -240,6 +301,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               if (Array.isArray(payload.data?.transactions)) {
                 setTransactions(payload.data.transactions);
               }
+            } else if (payload.eventType === 'VAULT_UPDATE') {
+              const { goal, goals } = payload.data || {};
+              if (Array.isArray(goals)) {
+                setVaultGoals(goals);
+              } else if (goal) {
+                setVaultGoals(prev => {
+                  const idx = prev.findIndex(g => g.id === goal.id);
+                  if (idx !== -1) {
+                    const next = [...prev];
+                    next[idx] = goal;
+                    return next;
+                  }
+                  return [goal, ...prev];
+                });
+              }
+              if (soundEnabled) playSyncChime();
+              setNotification('⚡ Caixinha do Cofre atualizada em tempo real!');
+            } else if (payload.eventType === 'VAULT_DELETE') {
+              const { id, goals } = payload.data || {};
+              if (Array.isArray(goals)) {
+                setVaultGoals(goals);
+              } else if (id) {
+                setVaultGoals(prev => prev.filter(g => g.id !== id));
+              }
+              setNotification('⚡ Caixinha removida do cofre');
             }
           } catch (err) {
             console.error('Erro ao processar mensagem SSE', err);
@@ -444,6 +530,44 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return false;
       }
     }
+
+    if (soundEnabled) playSyncChime();
+    return true;
+  };
+
+  const addTransactions = async (items: Omit<Transaction, 'id'>[]): Promise<boolean> => {
+    if (items.length === 0) return true;
+
+    const timestamp = Date.now();
+    const newTxs: Transaction[] = items.map((data, idx) => ({
+      ...data,
+      id: `tx-${timestamp}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
+      created_at: new Date().toISOString(),
+    }));
+
+    // 1. Optimistic local update
+    setTransactions(prev => [...newTxs, ...prev]);
+
+    // 2. Broadcast via backend server API
+    for (const newTx of newTxs) {
+      try {
+        fetch('/api/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-client-id': clientIdRef.current,
+          },
+          body: JSON.stringify(newTx),
+        }).catch(e => console.error('Erro na sincronização backend', e));
+      } catch (e) {}
+
+      // 3. Save to Supabase if configured
+      if (supabaseStatus.isConfigured) {
+        saveSupabaseTransaction(newTx).catch(e => console.error(e));
+      }
+    }
+
+    if (soundEnabled) playSyncChime();
     return true;
   };
 
@@ -530,6 +654,138 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return result;
   };
 
+  const addVaultGoal = async (
+    goalData: Omit<VaultGoal, 'id' | 'deposits' | 'created_at'>,
+    initialDeposit: number = 0
+  ): Promise<boolean> => {
+    const goalId = `goal-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const initialDeposits: VaultDeposit[] = [];
+    if (initialDeposit > 0) {
+      initialDeposits.push({
+        id: `dep-${Date.now()}`,
+        amount: initialDeposit,
+        type: 'deposit',
+        date: new Date().toISOString().split('T')[0],
+        owner: activeDeviceUser,
+        notes: 'Aporte inicial ao criar a caixinha',
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    const newGoal: VaultGoal = {
+      ...goalData,
+      id: goalId,
+      currentAmount: initialDeposit,
+      deposits: initialDeposits,
+      created_at: new Date().toISOString(),
+    };
+
+    setVaultGoals(prev => [newGoal, ...prev]);
+
+    try {
+      fetch('/api/vault', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(newGoal),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+
+    setNotification(`Caixinha "${newGoal.name}" criada no Cofre!`);
+    return true;
+  };
+
+  const updateVaultGoal = async (goal: VaultGoal): Promise<boolean> => {
+    setVaultGoals(prev => prev.map(g => (g.id === goal.id ? goal : g)));
+    try {
+      fetch('/api/vault', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(goal),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+    return true;
+  };
+
+  const deleteVaultGoal = async (id: string): Promise<boolean> => {
+    setVaultGoals(prev => prev.filter(g => g.id !== id));
+    try {
+      fetch(`/api/vault/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-client-id': clientIdRef.current,
+        },
+      }).catch(e => console.error(e));
+    } catch (e) {}
+    setNotification('Caixinha removida do cofre.');
+    return true;
+  };
+
+  const addVaultDeposit = async (
+    goalId: string,
+    amount: number,
+    type: 'deposit' | 'withdraw',
+    owner: TransactionOwner,
+    notes?: string
+  ): Promise<boolean> => {
+    const goal = vaultGoals.find(g => g.id === goalId);
+    if (!goal) return false;
+
+    const newDeposit: VaultDeposit = {
+      id: `dep-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      amount,
+      type,
+      date: new Date().toISOString().split('T')[0],
+      owner,
+      notes,
+      created_at: new Date().toISOString(),
+    };
+
+    const newCurrentAmount =
+      type === 'deposit'
+        ? goal.currentAmount + amount
+        : Math.max(0, goal.currentAmount - amount);
+
+    const updatedGoal: VaultGoal = {
+      ...goal,
+      currentAmount: newCurrentAmount,
+      deposits: [newDeposit, ...goal.deposits],
+      updated_at: new Date().toISOString(),
+    };
+
+    setVaultGoals(prev => prev.map(g => (g.id === goalId ? updatedGoal : g)));
+
+    try {
+      fetch('/api/vault', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientIdRef.current,
+        },
+        body: JSON.stringify(updatedGoal),
+      }).catch(e => console.error(e));
+    } catch (e) {}
+
+    const author =
+      owner === 'partner1'
+        ? partners.partner1Name
+        : owner === 'partner2'
+        ? partners.partner2Name
+        : 'Casal';
+    const actionText = type === 'deposit' ? 'guardou' : 'resgatou';
+    setNotification(
+      `${author} ${actionText} ${formatCurrency(amount)} na caixinha "${goal.name}"!`
+    );
+    if (soundEnabled) playSyncChime();
+
+    return true;
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -543,12 +799,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         supabaseStatus,
         notification,
         soundEnabled,
+        vaultGoals,
         setSoundEnabled,
         setActiveDeviceUser,
         setSelectedMonth,
         setFilterOwner,
         setSearchQuery,
         addTransaction,
+        addTransactions,
         updateTransaction,
         deleteTransaction,
         updatePartners,
@@ -556,6 +814,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         migrateLocalToSupabase,
         clearAllTransactions,
         dismissNotification,
+        addVaultGoal,
+        updateVaultGoal,
+        deleteVaultGoal,
+        addVaultDeposit,
       }}
     >
       {children}

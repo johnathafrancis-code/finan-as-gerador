@@ -11,38 +11,26 @@ import { OverviewMetrics } from './components/OverviewMetrics';
 import { BalanceSettlementCard } from './components/BalanceSettlementCard';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
 import { TransactionList } from './components/TransactionList';
+import { VaultView } from './components/VaultView';
 import { TransactionModal } from './components/TransactionModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Transaction } from './types/finance';
 import {
-  Zap,
-  X,
   ArrowUpRight,
   ArrowDownLeft,
-  Sparkles,
-  Database,
   ReceiptText,
-  HeartHandshake,
-  Trash2,
-  Sliders,
   ChevronRight,
 } from 'lucide-react';
-import { getTodayString } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
   const {
-    notification,
-    dismissNotification,
-    supabaseStatus,
-    partners,
-    activeDeviceUser,
-    addTransaction,
     transactions,
     selectedMonth,
+    partners,
   } = useFinance();
 
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement' | 'settings'>('dashboard');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement' | 'vault'>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -64,31 +52,6 @@ const DashboardContent: React.FC = () => {
     setCurrentTab('transactions');
   };
 
-  const handleSimulatePartnerSync = async () => {
-    const isP1 = activeDeviceUser === 'partner1';
-    const targetOwner = isP1 ? 'partner2' : 'partner1';
-    const authorName = isP1 ? partners.partner2Name : partners.partner1Name;
-    const samples = [
-      { desc: 'Farmácia (Remédios)', amount: 64.90, cat: 'saude' },
-      { desc: 'Supermercado (Feira da Semana)', amount: 135.50, cat: 'supermercado' },
-      { desc: 'Cafeteria & Lanche', amount: 28.00, cat: 'restaurante' },
-      { desc: 'Uber para o Trabalho', amount: 24.80, cat: 'transporte' },
-    ];
-    const pick = samples[Math.floor(Math.random() * samples.length)];
-
-    await addTransaction({
-      description: pick.desc,
-      amount: pick.amount,
-      type: 'expense',
-      category: pick.cat,
-      owner: targetOwner,
-      date: getTodayString(),
-      payment_method: 'pix',
-      status: 'paid',
-      notes: `Lançado pelo celular de ${authorName} para testar a sincronização em tempo real`,
-    });
-  };
-
   const monthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth));
 
   return (
@@ -102,23 +65,6 @@ const DashboardContent: React.FC = () => {
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         />
-
-        {/* Realtime Notification Banner */}
-        {notification && (
-          <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs text-emerald-800 flex items-center justify-between sticky top-[53px] z-20 shadow-xs animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 truncate pr-2">
-              <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-medium truncate">{notification}</span>
-            </div>
-            <button
-              type="button"
-              onClick={dismissNotification}
-              className="text-emerald-600 hover:text-emerald-900 p-1 rounded-md cursor-pointer shrink-0"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
 
         {/* Main Content Area */}
         <main className="flex-1 p-3.5 space-y-3.5">
@@ -166,16 +112,6 @@ const DashboardContent: React.FC = () => {
                   </div>
                 </button>
               </div>
-
-              {/* Fast Realtime Test Simulation Button */}
-              <button
-                type="button"
-                onClick={handleSimulatePartnerSync}
-                className="w-full py-2.5 px-3 bg-white border border-dashed border-emerald-300 rounded-xl text-xs font-semibold text-emerald-800 hover:bg-emerald-50/50 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Simular Lançamento da Raisa (Teste em Tempo Real)</span>
-              </button>
 
               {/* Balance Settlement (Divisão & Acerto) */}
               <BalanceSettlementCard />
@@ -260,81 +196,10 @@ const DashboardContent: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 4: AJUSTES */}
-          {currentTab === 'settings' && (
-            <div className="space-y-3 animate-in fade-in duration-150">
-              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3">
-                <h3 className="text-sm font-bold text-slate-900">
-                  Ajustes & Conexões
-                </h3>
-
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsModalOpen(true)}
-                    className="w-full p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/80 text-left flex items-center justify-between cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
-                        <HeartHandshake className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 block">
-                          Configurações do Casal
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {partners.partner1Name} & {partners.partner2Name} ({Math.round(partners.splitRatio * 100)}% / {Math.round((1 - partners.splitRatio) * 100)}%)
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsSupabaseModalOpen(true)}
-                    className="w-full p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/80 text-left flex items-center justify-between cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                        <Database className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 block">
-                          Conexão Nuvem Supabase
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {supabaseStatus.isConnected
-                            ? 'Conectado em tempo real'
-                            : 'Configurar URL e Chave do Supabase'}
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsModalOpen(true)}
-                    className="w-full p-3 bg-rose-50 hover:bg-rose-100/70 rounded-xl border border-rose-200 text-left flex items-center justify-between cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
-                        <Trash2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-rose-800 block">
-                          Zerar Lançamentos
-                        </span>
-                        <span className="text-[10px] text-rose-600">
-                          Limpar todos os dados para começar do zero
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-rose-400" />
-                  </button>
-                </div>
-              </div>
+          {/* TAB 4: COFRE (CAIXINHAS & METAS) */}
+          {currentTab === 'vault' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              <VaultView />
             </div>
           )}
         </main>
@@ -364,6 +229,10 @@ const DashboardContent: React.FC = () => {
         <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setIsSettingsModalOpen(false)}
+          onOpenSupabase={() => {
+            setIsSettingsModalOpen(false);
+            setIsSupabaseModalOpen(true);
+          }}
         />
       </div>
     </div>
