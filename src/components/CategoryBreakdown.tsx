@@ -2,14 +2,14 @@ import React from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { DEFAULT_CATEGORIES } from '../data/defaultData';
 import { formatCurrency, formatMonthName } from '../utils/formatters';
-import { PieChart, Tag, ArrowUpRight } from 'lucide-react';
+import { PieChart, ArrowRight } from 'lucide-react';
 
 interface CategoryBreakdownProps {
   onSelectCategory?: (categoryId: string) => void;
 }
 
 export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ onSelectCategory }) => {
-  const { transactions, selectedMonth, partners } = useFinance();
+  const { transactions, selectedMonth } = useFinance();
 
   const monthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth));
   const expenseTransactions = monthTransactions.filter(t => t.type === 'expense');
@@ -29,37 +29,34 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ onSelectCa
   const categoryList = Object.values(categoryMap).sort((a, b) => b.amount - a.amount);
 
   return (
-    <section className="bg-slate-900/60 rounded-xl border border-slate-800 p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-            <PieChart className="w-5 h-5" />
+    <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <PieChart className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white tracking-tight">
-              Despesas por Categoria
-            </h2>
-            <p className="text-xs text-slate-400">
-              Onde o casal mais investiu recursos em {formatMonthName(selectedMonth)}
-            </p>
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight leading-none">
+              Gastos por Categoria
+            </h3>
+            <span className="text-[10px] text-slate-500">
+              Distribuição do mês
+            </span>
           </div>
         </div>
 
-        <div className="text-right text-xs">
-          <span className="text-slate-400">Total Desembolsado:</span>
-          <span className="ml-2 font-bold font-mono text-rose-400 text-sm">
-            {formatCurrency(totalExpense)}
-          </span>
-        </div>
+        <span className="text-xs font-bold text-rose-700 font-mono tabular-nums">
+          {formatCurrency(totalExpense)}
+        </span>
       </div>
 
       {categoryList.length === 0 ? (
-        <div className="py-12 text-center text-slate-400 text-xs">
-          Nenhuma despesa registrada para o mês de {formatMonthName(selectedMonth)}.
+        <div className="py-6 text-center text-slate-500 text-xs">
+          Nenhuma despesa registrada neste mês.
         </div>
       ) : (
-        <div className="space-y-4">
-          {categoryList.map((item, index) => {
+        <div className="space-y-2.5 pt-1">
+          {categoryList.map(item => {
             const catInfo = DEFAULT_CATEGORIES.find(c => c.id === item.categoryId) || {
               name: item.categoryId,
               color: '#94a3b8',
@@ -67,51 +64,41 @@ export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ onSelectCa
             const percentage = totalExpense > 0 ? (item.amount / totalExpense) * 100 : 0;
 
             return (
-              <div
+              <button
                 key={item.categoryId}
+                type="button"
                 onClick={() => onSelectCategory && onSelectCategory(item.categoryId)}
-                className="group p-3 rounded-lg hover:bg-slate-800/40 transition-colors cursor-pointer"
+                className="w-full text-left group p-2 -mx-2 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
               >
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-slate-400 w-4 text-right">{index + 1}.</span>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                     <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      className="w-2.5 h-2.5 rounded-full"
                       style={{ backgroundColor: catInfo.color }}
                     />
-                    <span className="font-medium text-white group-hover:text-emerald-300 transition-colors">
-                      {catInfo.name}
-                    </span>
-                    <span className="text-slate-400">·</span>
-                    <span className="text-slate-400">{item.count} {item.count === 1 ? 'item' : 'itens'}</span>
-                  </div>
+                    <span>{catInfo.name}</span>
+                    <span className="text-[10px] text-slate-600">({item.count})</span>
+                  </span>
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-slate-200 tabular-nums">
-                      {formatCurrency(item.amount)}
-                    </span>
-                    <span className="font-mono text-slate-400 w-12 text-right">
-                      {percentage.toFixed(1)}%
-                    </span>
-                    <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" />
-                  </div>
+                  <span className="font-bold text-slate-900 font-mono tabular-nums">
+                    {formatCurrency(item.amount)}
+                  </span>
                 </div>
 
-                {/* Progress track */}
-                <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex items-center">
                   <div
-                    className="h-full rounded-full transition-all duration-500"
+                    className="h-full rounded-full transition-all"
                     style={{
                       width: `${percentage}%`,
                       backgroundColor: catInfo.color,
                     }}
                   />
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 };

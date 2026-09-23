@@ -3,7 +3,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Transaction, TransactionType, TransactionOwner, PaymentMethod, TransactionStatus } from '../types/finance';
 import { DEFAULT_CATEGORIES, PAYMENT_METHOD_LABELS } from '../data/defaultData';
 import { getTodayString } from '../utils/formatters';
-import { X, Check, ArrowDownLeft, ArrowUpRight, Calendar, Users, DollarSign, CreditCard } from 'lucide-react';
+import { X, Check, ArrowDownLeft, ArrowUpRight, Users } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -30,9 +30,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Quick suggestions
-  const expenseSuggestions = ['Supermercado', 'Aluguel do Mês', 'Energia Elétrica', 'Internet', 'Restaurante', 'Combustível', 'Farmácia', 'Lazer'];
-  const incomeSuggestions = ['Salário Mensal', 'Renda Extra / Freelance', 'Dividendos / Investimentos', 'Reembolso'];
+  // Suggestions
+  const expenseSuggestions = ['Supermercado', 'Aluguel / Condomínio', 'Energia Elétrica', 'Internet', 'Restaurante / Lanche', 'Combustível', 'Farmácia'];
+  const incomeSuggestions = ['Salário Mensal', 'Freelance / Extra', 'Rendimentos', 'Reembolso'];
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -46,7 +46,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setStatus(transactionToEdit.status);
       setNotes(transactionToEdit.notes || '');
     } else {
-      // Reset for new
       setType('expense');
       setDescription('');
       setAmountStr('');
@@ -68,12 +67,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     const numericAmount = parseFloat(amountStr.replace(',', '.'));
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      setErrorMessage('Por favor, insira um valor válido maior que zero.');
+      setErrorMessage('Por favor, informe um valor maior que zero.');
       return;
     }
 
     if (!description.trim()) {
-      setErrorMessage('Por favor, informe a descrição do lançamento.');
+      setErrorMessage('Por favor, digite o nome do lançamento.');
       return;
     }
 
@@ -107,7 +106,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       }
       onClose();
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Erro ao salvar lançamento.');
+      setErrorMessage(err?.message || 'Erro ao salvar.');
     } finally {
       setIsSubmitting(false);
     }
@@ -116,45 +115,47 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const currentCategories = DEFAULT_CATEGORIES.filter(c => c.type === type);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
       <div
-        className="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-md bg-white border-t sm:border border-slate-200 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-200"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Grab Handle */}
+        <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 sm:hidden" />
+
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="text-base font-bold text-white tracking-tight">
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-900 tracking-tight">
             {transactionToEdit ? 'Editar Lançamento' : 'Novo Lançamento'}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5 text-xs">
+        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
           {/* Type Toggle: Despesa vs Receita */}
           <div>
-            <label className="block font-semibold text-slate-300 mb-2">Tipo de Movimentação</label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
               <button
                 type="button"
                 onClick={() => {
                   setType('expense');
                   setCategory('supermercado');
                 }}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold transition-colors cursor-pointer ${
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg font-bold transition-all cursor-pointer ${
                   type === 'expense'
-                    ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-white text-rose-700 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <ArrowUpRight className="w-4 h-4 text-rose-400" />
-                <span>Despesa (Saída)</span>
+                <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                <span>Despesa</span>
               </button>
 
               <button
@@ -163,25 +164,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   setType('income');
                   setCategory('salario');
                 }}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold transition-colors cursor-pointer ${
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg font-bold transition-all cursor-pointer ${
                   type === 'income'
-                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
-                <span>Receita (Entrada)</span>
+                <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+                <span>Receita</span>
               </button>
             </div>
           </div>
 
-          {/* Amount */}
+          {/* Amount Input */}
           <div>
-            <label className="block font-semibold text-slate-300 mb-1.5">
-              Valor (R$)
+            <label className="block font-semibold text-slate-700 mb-1">
+              Valor
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm font-semibold">
                 R$
               </span>
               <input
@@ -191,32 +192,33 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 value={amountStr}
                 onChange={(e) => setAmountStr(e.target.value)}
                 required
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-12 pr-4 py-2.5 text-lg font-bold font-mono text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-colors tabular-nums"
+                autoFocus
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-2.5 text-xl font-bold font-mono text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-600 transition-colors tabular-nums shadow-xs"
               />
             </div>
           </div>
 
           {/* Description */}
           <div>
-            <label className="block font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-700 mb-1">
               Descrição
             </label>
             <input
               type="text"
-              placeholder="Ex: Supermercado Semanal, Conta de Luz..."
+              placeholder="Ex: Mercado da Semana, Conta de Luz..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
-              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-colors"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-600 transition-colors shadow-xs"
             />
-            {/* Suggestions */}
+            {/* Quick chips */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {(type === 'expense' ? expenseSuggestions : incomeSuggestions).map(sug => (
                 <button
                   type="button"
                   key={sug}
                   onClick={() => setDescription(sug)}
-                  className="px-2 py-0.5 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[11px] transition-colors cursor-pointer"
+                  className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] transition-colors cursor-pointer"
                 >
                   {sug}
                 </button>
@@ -224,19 +226,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           </div>
 
-          {/* Owner: Quem Pagou ou Recebeu */}
+          {/* Quem Pagou / Quem Recebeu */}
           <div>
-            <label className="block font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-700 mb-1">
               {type === 'expense' ? 'Quem Pagou / Responsável' : 'Quem Recebeu'}
             </label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setOwner('partner1')}
-                className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
                   owner === 'partner1'
-                    ? 'bg-slate-800 border-indigo-500 text-white font-semibold'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                    ? 'bg-indigo-50 border-indigo-400 text-indigo-800 font-bold shadow-xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
                 {partners.partner1Avatar ? (
@@ -244,23 +246,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     src={partners.partner1Avatar}
                     alt=""
                     referrerPolicy="no-referrer"
-                    className="w-6 h-6 rounded-full object-cover"
+                    className="w-5 h-5 rounded-full object-cover"
                   />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
-                    {partners.partner1Name[0]}
-                  </div>
-                )}
+                ) : null}
                 <span className="truncate w-full">{partners.partner1Name}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setOwner('partner2')}
-                className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
                   owner === 'partner2'
-                    ? 'bg-slate-800 border-pink-500 text-white font-semibold'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                    ? 'bg-pink-50 border-pink-400 text-pink-800 font-bold shadow-xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
                 {partners.partner2Avatar ? (
@@ -268,27 +266,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     src={partners.partner2Avatar}
                     alt=""
                     referrerPolicy="no-referrer"
-                    className="w-6 h-6 rounded-full object-cover"
+                    className="w-5 h-5 rounded-full object-cover"
                   />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-pink-500/20 text-pink-400 flex items-center justify-center font-bold text-xs">
-                    {partners.partner2Name[0]}
-                  </div>
-                )}
+                ) : null}
                 <span className="truncate w-full">{partners.partner2Name}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setOwner('shared')}
-                className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
                   owner === 'shared'
-                    ? 'bg-slate-800 border-emerald-500 text-emerald-300 font-semibold'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                    ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <Users className="w-3.5 h-3.5" />
+                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <Users className="w-3 h-3" />
                 </div>
                 <span>Compartilhado</span>
               </button>
@@ -296,15 +290,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           {/* Category & Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="block font-semibold text-slate-300 mb-1.5">
+              <label className="block font-semibold text-slate-700 mb-1">
                 Categoria
               </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 text-xs shadow-xs"
               >
                 {currentCategories.map(c => (
                   <option key={c.id} value={c.id}>
@@ -315,29 +309,29 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-300 mb-1.5">
-                Data do Lançamento
+              <label className="block font-semibold text-slate-700 mb-1">
+                Data
               </label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 required
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-mono"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 font-mono text-xs shadow-xs"
               />
             </div>
           </div>
 
           {/* Payment Method & Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="block font-semibold text-slate-300 mb-1.5">
+              <label className="block font-semibold text-slate-700 mb-1">
                 Forma de Pagamento
               </label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 text-xs shadow-xs"
               >
                 {Object.entries(PAYMENT_METHOD_LABELS).map(([key, label]) => (
                   <option key={key} value={key}>
@@ -348,28 +342,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-300 mb-1.5">
+              <label className="block font-semibold text-slate-700 mb-1">
                 Status
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
                 <button
                   type="button"
                   onClick={() => setStatus('paid')}
-                  className={`py-2 rounded-xl border text-center font-medium transition-colors cursor-pointer ${
+                  className={`py-1.5 rounded-lg text-center font-bold text-[11px] transition-all cursor-pointer ${
                     status === 'paid'
-                      ? 'bg-emerald-950/60 border-emerald-600 text-emerald-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Pago / Recebido
+                  Pago
                 </button>
                 <button
                   type="button"
                   onClick={() => setStatus('pending')}
-                  className={`py-2 rounded-xl border text-center font-medium transition-colors cursor-pointer ${
+                  className={`py-1.5 rounded-lg text-center font-bold text-[11px] transition-all cursor-pointer ${
                     status === 'pending'
-                      ? 'bg-amber-950/60 border-amber-600 text-amber-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-white text-amber-700 shadow-xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   Pendente
@@ -380,40 +374,32 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block font-semibold text-slate-300 mb-1.5">
+            <label className="block font-semibold text-slate-700 mb-1">
               Observações (Opcional)
             </label>
             <input
               type="text"
-              placeholder="Ex: Dividido no cartão em 3x, reembolso no dia 15..."
+              placeholder="Ex: Parcela 1 de 3, pago no cartão da Esposa..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-600 shadow-xs"
             />
           </div>
 
           {errorMessage && (
-            <div className="p-3 bg-rose-950/60 border border-rose-800 rounded-xl text-rose-300 text-xs">
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
               {errorMessage}
             </div>
           )}
 
-          {/* Actions */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              Cancelar
-            </button>
+          {/* Action Button */}
+          <div className="pt-2">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-sm transition-colors cursor-pointer flex items-center gap-2"
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-sm shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
-              <Check className="w-4 h-4" />
+              <Check className="w-4 h-4 stroke-[3]" />
               <span>{isSubmitting ? 'Salvando...' : 'Salvar Lançamento'}</span>
             </button>
           </div>

@@ -27,103 +27,7 @@ interface TransactionItem {
 // In-memory data store with file persistence
 const DATA_FILE = path.join(__dirname, 'transactions-data.json');
 
-const INITIAL_DATA: TransactionItem[] = [
-  {
-    id: 'tx-001',
-    description: 'Salário Johnatha',
-    amount: 6500.00,
-    type: 'income',
-    category: 'salario',
-    owner: 'partner1',
-    date: '2026-09-05',
-    payment_method: 'transferencia',
-    status: 'paid',
-    notes: 'Salário mensal recebido via conta jurídica',
-  },
-  {
-    id: 'tx-002',
-    description: 'Salário Esposa',
-    amount: 5800.00,
-    type: 'income',
-    category: 'salario',
-    owner: 'partner2',
-    date: '2026-09-05',
-    payment_method: 'transferencia',
-    status: 'paid',
-    notes: 'Salário mensal recebido via CLT',
-  },
-  {
-    id: 'tx-003',
-    description: 'Aluguel do Apartamento + Condomínio',
-    amount: 3200.00,
-    type: 'expense',
-    category: 'moradia',
-    owner: 'shared',
-    date: '2026-09-10',
-    payment_method: 'boleto',
-    status: 'paid',
-    notes: 'Pago por Johnatha',
-  },
-  {
-    id: 'tx-004',
-    description: 'Supermercado do Mês (Pão de Açúcar)',
-    amount: 1450.60,
-    type: 'expense',
-    category: 'supermercado',
-    owner: 'shared',
-    date: '2026-09-12',
-    payment_method: 'cartao_credito',
-    status: 'paid',
-    notes: 'Passado no cartão da Esposa',
-  },
-  {
-    id: 'tx-005',
-    description: 'Conta de Energia (Enel)',
-    amount: 280.40,
-    type: 'expense',
-    category: 'utilidades',
-    owner: 'shared',
-    date: '2026-09-15',
-    payment_method: 'pix',
-    status: 'paid',
-    notes: 'Debitado da conta conjunta',
-  },
-  {
-    id: 'tx-006',
-    description: 'Internet Fibra 500MB',
-    amount: 129.90,
-    type: 'expense',
-    category: 'utilidades',
-    owner: 'shared',
-    date: '2026-09-18',
-    payment_method: 'pix',
-    status: 'paid',
-  },
-  {
-    id: 'tx-007',
-    description: 'Jantar Romântico de Sexta',
-    amount: 320.00,
-    type: 'expense',
-    category: 'restaurante',
-    owner: 'shared',
-    date: '2026-09-19',
-    payment_method: 'cartao_credito',
-    status: 'paid',
-    notes: 'Comemoração no bistrô',
-  },
-  {
-    id: 'tx-012',
-    description: 'Plano de Saúde Familiar (Próximo Vencimento)',
-    amount: 980.00,
-    type: 'expense',
-    category: 'saude',
-    owner: 'shared',
-    date: '2026-09-28',
-    payment_method: 'boleto',
-    status: 'pending',
-    notes: 'Vence no fim do mês',
-  }
-];
+const INITIAL_DATA: TransactionItem[] = [];
 
 let transactions: TransactionItem[] = [];
 
@@ -132,11 +36,11 @@ try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
     transactions = JSON.parse(raw);
   } else {
-    transactions = [...INITIAL_DATA];
-    fs.writeFileSync(DATA_FILE, JSON.stringify(transactions, null, 2));
+    transactions = [];
+    fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2));
   }
 } catch (e) {
-  transactions = [...INITIAL_DATA];
+  transactions = [];
 }
 
 function persistData() {
@@ -247,6 +151,14 @@ async function startServer() {
 
     broadcast('DELETE', { id }, req.headers['x-client-id'] as string);
     res.json({ success: true, id });
+  });
+
+  // 4b. Clear all transactions
+  app.post('/api/transactions/clear', (req, res) => {
+    transactions = [];
+    persistData();
+    broadcast('RELOAD', { transactions: [] }, req.headers['x-client-id'] as string);
+    res.json({ success: true, count: 0 });
   });
 
   // 5. Bulk sync / restore

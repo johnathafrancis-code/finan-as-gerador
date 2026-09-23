@@ -40,6 +40,7 @@ interface FinanceContextType {
   updatePartners: (config: Partial<PartnerConfig>) => void;
   refreshTransactions: () => Promise<void>;
   migrateLocalToSupabase: () => Promise<{ count: number; error: string | null }>;
+  clearAllTransactions: () => Promise<void>;
   dismissNotification: () => void;
 }
 
@@ -87,11 +88,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_TX_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          // If stored data contains the old mock tx-001, clear it
+          if (parsed.some((t: any) => t.id === 'tx-001')) {
+            localStorage.removeItem(LOCAL_STORAGE_TX_KEY);
+            return [];
+          }
+          return parsed;
+        }
+      }
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_TRANSACTIONS;
+    return [];
   });
 
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthString());
@@ -486,6 +497,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await loadSupabaseData();
   };
 
+  const clearAllTransactions = async () => {
+    setTransactions([]);
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_TX_KEY);
+      await fetch('/api/transactions/clear', {
+        method: 'POST',
+        headers: {
+          'x-client-id': clientIdRef.current,
+        },
+      });
+    } catch (e) {
+      console.error('Erro ao limpar lançamentos', e);
+    }
+    setNotification('Todos os lançamentos foram zerados. Pronto para começar do zero!');
+  };
+
   const migrateLocalToSupabase = async () => {
     setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
     const result = await bulkUploadToSupabase(transactions);
@@ -520,6 +547,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updatePartners,
         refreshTransactions,
         migrateLocalToSupabase,
+        clearAllTransactions,
         dismissNotification,
       }}
     >

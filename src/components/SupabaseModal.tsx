@@ -14,8 +14,6 @@ import {
   AlertCircle,
   Copy,
   ExternalLink,
-  RefreshCw,
-  UploadCloud,
   Check,
   Zap,
 } from 'lucide-react';
@@ -26,7 +24,7 @@ interface SupabaseModalProps {
 }
 
 export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose }) => {
-  const { supabaseStatus, refreshTransactions, migrateLocalToSupabase } = useFinance();
+  const { supabaseStatus, refreshTransactions } = useFinance();
 
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
@@ -36,7 +34,6 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     tableExists: boolean;
   } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
@@ -60,7 +57,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     setIsTesting(false);
   };
 
-  const handleSaveConfig = async () => {
+  const handleSaveAndConnect = async () => {
     saveStoredSupabaseConfig(url, anonKey);
     await refreshTransactions();
     onClose();
@@ -74,216 +71,170 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     await refreshTransactions();
   };
 
-  const handleCopySql = () => {
+  const copySqlToClipboard = () => {
     navigator.clipboard.writeText(getSupabaseSqlSchema());
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 3000);
   };
 
-  const handleMigrate = async () => {
-    setIsMigrating(true);
-    await migrateLocalToSupabase();
-    setIsMigrating(false);
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
       <div
-        className="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="w-full max-w-md bg-white border-t sm:border border-slate-200 rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Database className="w-4 h-4" />
-            </div>
+        {/* Grab handle */}
+        <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 sm:hidden" />
+
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-emerald-600" />
             <div>
-              <h3 className="text-base font-bold text-white tracking-tight">
-                Sincronização em Tempo Real com Supabase
+              <h3 className="text-sm font-bold text-slate-900 tracking-tight leading-none">
+                Sincronização Supabase
               </h3>
-              <p className="text-xs text-slate-400">
-                Conecte seu banco de dados para que você e sua esposa vejam lançamentos em tempo real
-              </p>
+              <span className="text-[10px] text-slate-500">
+                Nuvem e tempo real entre celulares
+              </span>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6 text-xs">
+        <div className="p-5 overflow-y-auto space-y-4 text-xs">
           {/* Status banner */}
           <div
-            className={`p-4 rounded-xl border flex items-start gap-3 ${
+            className={`p-3 rounded-xl border flex items-center gap-3 ${
               supabaseStatus.isConnected
-                ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-200'
-                : 'bg-slate-950/60 border-slate-800 text-slate-300'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
             }`}
           >
-            {supabaseStatus.isConnected ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-            ) : (
-              <Zap className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            )}
-            <div className="space-y-1">
-              <span className="font-semibold block text-sm">
+            <div
+              className={`w-3 h-3 rounded-full ${
+                supabaseStatus.isConnected
+                  ? 'bg-emerald-500 animate-pulse'
+                  : 'bg-slate-400'
+              }`}
+            />
+            <div className="flex-1">
+              <span className="font-bold block">
                 {supabaseStatus.isConnected
-                  ? 'Supabase Conectado e Sincronizando!'
-                  : 'Sincronização entre Aparelhos'}
+                  ? 'Supabase Conectado em Tempo Real!'
+                  : 'Sincronização Local / SSE Ativa'}
               </span>
-              <p className="text-slate-400 leading-relaxed">
+              <span className="text-[11px] text-slate-500">
                 {supabaseStatus.isConnected
-                  ? `Qualquer gasto ou recebimento inserido no seu aparelho aparecerá no celular da sua esposa instantaneamente, sem precisar atualizar a página.`
-                  : `Configurando suas credenciais do Supabase, você e sua esposa podem abrir o aplicativo em telefones e computadores diferentes com sincronização automática instantânea.`}
-              </p>
+                  ? 'Mudanças são refletidas instantaneamente nos aparelhos.'
+                  : 'Configure as credenciais abaixo para sincronizar na nuvem Supabase.'}
+              </span>
             </div>
           </div>
 
-          {/* Form fields */}
-          <div className="space-y-4">
+          {/* Form */}
+          <div className="space-y-3">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="font-semibold text-slate-300">
-                  Supabase Project URL
-                </label>
-                <a
-                  href="https://supabase.com/dashboard"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 text-[11px]"
-                >
-                  <span>Abrir Supabase Dashboard</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Project URL (Supabase)
+              </label>
               <input
                 type="text"
                 placeholder="https://xyzcompany.supabase.co"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                onChange={(e) => setUrl(e.target.value.trim())}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono text-xs focus:bg-white focus:outline-none focus:border-emerald-600 shadow-xs"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-300 mb-1.5">
-                Supabase Anon (Public) Key
+              <label className="block font-semibold text-slate-700 mb-1">
+                anon / public API Key
               </label>
               <input
                 type="password"
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 value={anonKey}
-                onChange={(e) => setAnonKey(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                onChange={(e) => setAnonKey(e.target.value.trim())}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-mono text-xs focus:bg-white focus:outline-none focus:border-emerald-600 shadow-xs"
               />
             </div>
 
             {/* Test result message */}
             {testResult && (
               <div
-                className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
                   testResult.success
-                    ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
-                    : 'bg-rose-950/40 border-rose-800 text-rose-300'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
                 }`}
               >
                 {testResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 )}
-                <span>{testResult.message}</span>
+                <div>
+                  <span className="font-semibold block">{testResult.message}</span>
+                </div>
               </div>
             )}
 
-            {/* Action buttons */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+            {/* Test button & Save button */}
+            <div className="flex gap-2 pt-1">
               <button
                 type="button"
                 onClick={handleTestConnection}
                 disabled={isTesting || !url || !anonKey}
-                className="px-3.5 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-semibold transition-colors cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-                <span>{isTesting ? 'Testando...' : 'Testar Conexão'}</span>
+                {isTesting ? 'Testando...' : 'Testar Conexão'}
               </button>
 
               <button
                 type="button"
-                onClick={handleSaveConfig}
+                onClick={handleSaveAndConnect}
                 disabled={!url || !anonKey}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors cursor-pointer disabled:opacity-50"
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>Salvar & Conectar</span>
+                Salvar & Conectar
               </button>
-
-              {supabaseStatus.isConnected && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleMigrate}
-                    disabled={isMigrating}
-                    className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    title="Envia as transações que estão salvas no navegador para a nuvem no Supabase"
-                  >
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    <span>{isMigrating ? 'Enviando...' : 'Migrar Dados Locais'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDisconnect}
-                    className="px-3.5 py-2 rounded-lg border border-rose-900/60 text-rose-300 hover:bg-rose-950/40 transition-colors cursor-pointer ml-auto"
-                  >
-                    Desconectar
-                  </button>
-                </>
-              )}
             </div>
+
+            {supabaseStatus.isConfigured && (
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                className="w-full py-1.5 text-rose-600 hover:text-rose-700 text-[11px] font-semibold cursor-pointer"
+              >
+                Desconectar Supabase
+              </button>
+            )}
           </div>
 
-          {/* SQL Setup Instructions */}
-          <div className="pt-4 border-t border-slate-800 space-y-3">
+          {/* SQL Script Box */}
+          <div className="pt-3 border-t border-slate-100 space-y-2">
             <div className="flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-slate-200 block text-xs">
-                  Script de Configuração do Banco (SQL Editor)
-                </span>
-                <span className="text-slate-400 text-[11px]">
-                  Basta colar no SQL Editor do Supabase para criar a tabela com Tempo Real ativado
-                </span>
-              </div>
+              <span className="font-semibold text-slate-700">
+                Script SQL para criar tabela no Supabase:
+              </span>
               <button
                 type="button"
-                onClick={handleCopySql}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                onClick={copySqlToClipboard}
+                className="flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
               >
-                {copiedSql ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-300">Copiado!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copiar SQL</span>
-                  </>
-                )}
+                {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedSql ? 'Copiado!' : 'Copiar SQL'}</span>
               </button>
             </div>
-
-            <div className="relative">
-              <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-44">
-                {getSupabaseSqlSchema()}
-              </pre>
-            </div>
+            <pre className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-700 font-mono overflow-x-auto max-h-32">
+              {getSupabaseSqlSchema()}
+            </pre>
           </div>
         </div>
       </div>

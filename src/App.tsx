@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { TopBar } from './components/TopBar';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { OverviewMetrics } from './components/OverviewMetrics';
 import { BalanceSettlementCard } from './components/BalanceSettlementCard';
 import { CategoryBreakdown } from './components/CategoryBreakdown';
@@ -14,13 +15,34 @@ import { TransactionModal } from './components/TransactionModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Transaction } from './types/finance';
-import { Zap, X, Shield, ArrowRight, Plus, Radio, Sparkles } from 'lucide-react';
+import {
+  Zap,
+  X,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Sparkles,
+  Database,
+  ReceiptText,
+  HeartHandshake,
+  Trash2,
+  Sliders,
+  ChevronRight,
+} from 'lucide-react';
 import { getTodayString } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
-  const { notification, dismissNotification, supabaseStatus, partners, activeDeviceUser, addTransaction, connectedDevices } = useFinance();
+  const {
+    notification,
+    dismissNotification,
+    supabaseStatus,
+    partners,
+    activeDeviceUser,
+    addTransaction,
+    transactions,
+    selectedMonth,
+  } = useFinance();
 
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement'>('dashboard');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'categories' | 'settlement' | 'settings'>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -63,122 +85,164 @@ const DashboardContent: React.FC = () => {
       date: getTodayString(),
       payment_method: 'pix',
       status: 'paid',
-      notes: `Lançado pelo celular de ${authorName} para testar a sincronização imediata`,
+      notes: `Lançado pelo celular de ${authorName} para testar a sincronização em tempo real`,
     });
   };
 
-  return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col font-sans">
-      {/* Top Bar matching Top Bar Contract */}
-      <TopBar
-        onOpenNewTransaction={handleOpenNewTransaction}
-        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-      />
+  const monthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth));
 
-      {/* Realtime Notification Toast */}
-      {notification && (
-        <div className="bg-emerald-900/90 border-b border-emerald-700/80 px-4 py-2.5 text-xs text-emerald-100 flex items-center justify-between shadow-lg sticky top-[57px] z-20 backdrop-blur-md transition-all">
-          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{notification}</span>
+  return (
+    <div className="min-h-screen bg-slate-100 flex justify-center text-slate-900 font-sans">
+      {/* Mobile Frame Container (Max width 430px for authentic phone feel on any screen) */}
+      <div className="w-full max-w-md min-h-screen bg-slate-50 flex flex-col relative shadow-xl shadow-slate-200/80 border-x border-slate-200/60 pb-20">
+        
+        {/* Sticky Mobile Top Bar */}
+        <TopBar
+          onOpenNewTransaction={handleOpenNewTransaction}
+          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+          onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        />
+
+        {/* Realtime Notification Banner */}
+        {notification && (
+          <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs text-emerald-800 flex items-center justify-between sticky top-[53px] z-20 shadow-xs animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 truncate pr-2">
+              <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-medium truncate">{notification}</span>
             </div>
             <button
+              type="button"
               onClick={dismissNotification}
-              className="text-emerald-300 hover:text-white p-1 rounded-md cursor-pointer"
+              className="text-emerald-600 hover:text-emerald-900 p-1 rounded-md cursor-pointer shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Supabase Onboarding Banner if not configured yet */}
-      {!supabaseStatus.isConfigured && (
-        <div className="bg-gradient-to-r from-emerald-950/70 via-slate-900 to-indigo-950/70 border-b border-slate-800 px-4 py-2.5 text-xs">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-slate-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>
-                <strong>Quer sincronizar com o celular da sua esposa?</strong> Conecte seu Supabase em 1 minuto para sincronização automática em tempo real.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/30 text-emerald-300 rounded-md font-semibold transition-colors cursor-pointer self-start sm:self-auto whitespace-nowrap"
-            >
-              <span>Configurar Supabase</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
+        {/* Main Content Area */}
+        <main className="flex-1 p-3.5 space-y-3.5">
+          {/* TAB 1: INÍCIO (DASHBOARD) */}
+          {currentTab === 'dashboard' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              {/* Overview Metrics (Month scroller + Balance Card + Partner cards) */}
+              <OverviewMetrics />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
-        {/* TAB 1: DASHBOARD (VISÃO GERAL) */}
-        {currentTab === 'dashboard' && (
-          <div className="space-y-6">
-            {/* Live Sync Quick Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
-                </span>
-                <span className="text-slate-300 font-medium">
-                  Sincronização instantânea ativa:
-                </span>
-                <span className="text-slate-400">
-                  Qualquer lançamento feito por você ou por {partners.partner2Name} aparece na hora em ambos os celulares.
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSimulatePartnerSync}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 rounded-lg text-xs font-medium transition-colors cursor-pointer self-start sm:self-auto shrink-0"
-                title={`Simula ${activeDeviceUser === 'partner1' ? partners.partner2Name : partners.partner1Name} cadastrando um gasto no celular dela agora`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Simular Lançamento da Esposa (Teste)</span>
-              </button>
-            </div>
-
-            {/* Overview KPI Metrics & Month Navigator */}
-            <OverviewMetrics />
-
-            {/* Split row: Acerto de Contas & Category Breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <BalanceSettlementCard />
-              <CategoryBreakdown onSelectCategory={handleSelectCategory} />
-            </div>
-
-            {/* Recent Transactions Section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-white tracking-tight">
-                    Lançamentos Recentes
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Últimas movimentações registradas por você e {partners.partner2Name}
-                  </p>
-                </div>
+              {/* Quick Actions Shortcuts */}
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setCurrentTab('transactions')}
-                  className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
+                  onClick={handleOpenNewTransaction}
+                  className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-slate-300 active:scale-[0.98] transition-all flex items-center gap-2.5 cursor-pointer text-left"
                 >
-                  <span>Ver Todos os Lançamentos</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                    <ArrowUpRight className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block leading-tight">
+                      + Despesa
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Gasto comum ou seu
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenNewTransaction}
+                  className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs hover:border-slate-300 active:scale-[0.98] transition-all flex items-center gap-2.5 cursor-pointer text-left"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                    <ArrowDownLeft className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block leading-tight">
+                      + Receita
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Salário ou entrada
+                    </span>
+                  </div>
                 </button>
               </div>
 
+              {/* Fast Realtime Test Simulation Button */}
+              <button
+                type="button"
+                onClick={handleSimulatePartnerSync}
+                className="w-full py-2.5 px-3 bg-white border border-dashed border-emerald-300 rounded-xl text-xs font-semibold text-emerald-800 hover:bg-emerald-50/50 active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Simular Lançamento da Esposa (Teste em Tempo Real)</span>
+              </button>
+
+              {/* Balance Settlement (Divisão & Acerto) */}
+              <BalanceSettlementCard />
+
+              {/* Category Breakdown (Gastos por Categoria) */}
+              <CategoryBreakdown onSelectCategory={handleSelectCategory} />
+
+              {/* Recent Transactions Preview */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <ReceiptText className="w-4 h-4" />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Lançamentos Recentes
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentTab('transactions')}
+                    className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>Ver todos ({monthTransactions.length})</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {monthTransactions.length === 0 ? (
+                  <div className="py-6 text-center text-slate-500 text-xs">
+                    Nenhum lançamento cadastrado neste mês.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {monthTransactions.slice(0, 4).map(tx => (
+                      <div
+                        key={tx.id}
+                        onClick={() => handleEditTransaction(tx)}
+                        className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer border border-transparent hover:border-slate-100"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <span className="text-xs font-semibold text-slate-800 block truncate">
+                            {tx.description}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {tx.date} · {tx.owner === 'partner1' ? partners.partner1Name : (tx.owner === 'partner2' ? partners.partner2Name : 'Compartilhado')}
+                          </span>
+                        </div>
+                        <span
+                          className={`text-xs font-bold font-mono shrink-0 tabular-nums ${
+                            tx.type === 'expense' ? 'text-slate-900' : 'text-emerald-700'
+                          }`}
+                        >
+                          {tx.type === 'expense' ? '- ' : '+ '}
+                          R$ {tx.amount.toFixed(2).replace('.', ',')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: EXTRATO COMPLETO */}
+          {currentTab === 'transactions' && (
+            <div className="animate-in fade-in duration-150">
               <TransactionList
                 onEditTransaction={handleEditTransaction}
                 onNewTransaction={handleOpenNewTransaction}
@@ -186,134 +250,122 @@ const DashboardContent: React.FC = () => {
                 onClearCategoryFilter={() => setSelectedCategoryFilter(null)}
               />
             </div>
-          </div>
-        )}
+          )}
 
-        {/* TAB 2: TRANSACTIONS (LANÇAMENTOS) */}
-        {currentTab === 'transactions' && (
-          <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800">
-              <div>
-                <h2 className="text-xl font-bold text-white tracking-tight">
-                  Livro de Lançamentos do Casal
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Gerencie, filtre e acompanhe todas as entradas e saídas detalhadamente
-                </p>
+          {/* TAB 3: DIVISÃO & ACERTO */}
+          {currentTab === 'settlement' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              <BalanceSettlementCard />
+              <CategoryBreakdown onSelectCategory={handleSelectCategory} />
+            </div>
+          )}
+
+          {/* TAB 4: AJUSTES */}
+          {currentTab === 'settings' && (
+            <div className="space-y-3 animate-in fade-in duration-150">
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Ajustes & Conexões
+                </h3>
+
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsModalOpen(true)}
+                    className="w-full p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/80 text-left flex items-center justify-between cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                        <HeartHandshake className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Configurações do Casal
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {partners.partner1Name} & {partners.partner2Name} ({Math.round(partners.splitRatio * 100)}% / {Math.round((1 - partners.splitRatio) * 100)}%)
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSupabaseModalOpen(true)}
+                    className="w-full p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/80 text-left flex items-center justify-between cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                        <Database className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Conexão Nuvem Supabase
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {supabaseStatus.isConnected
+                            ? 'Conectado em tempo real'
+                            : 'Configurar URL e Chave do Supabase'}
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsModalOpen(true)}
+                    className="w-full p-3 bg-rose-50 hover:bg-rose-100/70 rounded-xl border border-rose-200 text-left flex items-center justify-between cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                        <Trash2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-rose-800 block">
+                          Zerar Lançamentos
+                        </span>
+                        <span className="text-[10px] text-rose-600">
+                          Limpar todos os dados para começar do zero
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-rose-400" />
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenNewTransaction}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer self-start sm:self-auto"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Novo Lançamento</span>
-              </button>
             </div>
+          )}
+        </main>
 
-            <OverviewMetrics />
+        {/* Fixed Mobile Bottom Tab Bar (Thumb Zone) */}
+        <MobileBottomNav
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          onOpenNewTransaction={handleOpenNewTransaction}
+        />
 
-            <TransactionList
-              onEditTransaction={handleEditTransaction}
-              onNewTransaction={handleOpenNewTransaction}
-              selectedCategoryFilter={selectedCategoryFilter}
-              onClearCategoryFilter={() => setSelectedCategoryFilter(null)}
-            />
-          </div>
-        )}
+        {/* Modals as Mobile Bottom Sheets */}
+        <TransactionModal
+          isOpen={isTransactionModalOpen}
+          onClose={() => {
+            setIsTransactionModalOpen(false);
+            setTransactionToEdit(null);
+          }}
+          transactionToEdit={transactionToEdit}
+        />
 
-        {/* TAB 3: SETTLEMENT (DIVISÃO & ACERTO) */}
-        {currentTab === 'settlement' && (
-          <div className="space-y-6">
-            <div className="pb-2 border-b border-slate-800">
-              <h2 className="text-xl font-bold text-white tracking-tight">
-                Divisão & Balanço Financeiro do Casal
-              </h2>
-              <p className="text-xs text-slate-400">
-                Acompanhe o equilíbrio dos gastos da casa, quem pagou mais e acertos de contas pendentes
-              </p>
-            </div>
+        <SupabaseModal
+          isOpen={isSupabaseModalOpen}
+          onClose={() => setIsSupabaseModalOpen(false)}
+        />
 
-            <OverviewMetrics />
-            <BalanceSettlementCard />
-
-            <div className="pt-4">
-              <h3 className="text-sm font-bold text-white mb-3">
-                Despesas Marcadas como Compartilhadas
-              </h3>
-              <TransactionList
-                onEditTransaction={handleEditTransaction}
-                onNewTransaction={handleOpenNewTransaction}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: CATEGORIES (CATEGORIAS) */}
-        {currentTab === 'categories' && (
-          <div className="space-y-6">
-            <div className="pb-2 border-b border-slate-800">
-              <h2 className="text-xl font-bold text-white tracking-tight">
-                Análise por Categorias
-              </h2>
-              <p className="text-xs text-slate-400">
-                Detalhamento dos gastos mensais em moradia, mercado, restaurantes, transporte e lazer
-              </p>
-            </div>
-
-            <OverviewMetrics />
-            <CategoryBreakdown onSelectCategory={handleSelectCategory} />
-          </div>
-        )}
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950/80 py-6 px-4 lg:px-8 mt-12 text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-300">Finanças a Dois</span>
-            <span>·</span>
-            <span>Gestão Compartilhada para Casais</span>
-          </div>
-
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>Sincronizado via Supabase</span>
-            <span>·</span>
-            <button
-              type="button"
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="hover:text-emerald-400 transition-colors cursor-pointer"
-            >
-              Configurar Banco
-            </button>
-            <span>·</span>
-            <button
-              type="button"
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="hover:text-emerald-400 transition-colors cursor-pointer"
-            >
-              Parceiros & Divisão
-            </button>
-          </div>
-        </div>
-      </footer>
-
-      {/* Modals */}
-      <TransactionModal
-        isOpen={isTransactionModalOpen}
-        onClose={() => setIsTransactionModalOpen(false)}
-        transactionToEdit={transactionToEdit}
-      />
-
-      <SupabaseModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
-
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-      />
+        <SettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+        />
+      </div>
     </div>
   );
 };
