@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Transaction } from '../types/finance';
+import { Transaction, Loan, LoanPayment, ChatMessage, TransactionOwner } from '../types/finance';
 
 const CONFIG_STORAGE_KEY = 'financas_supabase_config';
 
@@ -82,7 +82,108 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 }
 
-export async function testSupabaseConnection(url?: string, key?: string): Promise<{ success: boolean; message: string; tableExists: boolean }> {
+// --------------------------------------------------------
+// MAPPERS
+// --------------------------------------------------------
+
+export function mapSupabaseTransaction(row: any): Transaction {
+  return {
+    id: String(row.id),
+    description: row.description,
+    amount: Number(row.amount),
+    type: row.type as 'income' | 'expense',
+    category: row.category,
+    owner: row.owner as TransactionOwner,
+    date: row.date,
+    payment_method: row.payment_method,
+    status: row.status as 'paid' | 'pending',
+    notes: row.notes || undefined,
+    created_at: row.created_at,
+  };
+}
+
+export function mapSupabaseLoan(row: any): Loan {
+  let parsedPayments: LoanPayment[] = [];
+  if (Array.isArray(row.payments)) {
+    parsedPayments = row.payments;
+  } else if (typeof row.payments === 'string') {
+    try {
+      parsedPayments = JSON.parse(row.payments);
+    } catch (e) {
+      parsedPayments = [];
+    }
+  }
+
+  return {
+    id: String(row.id),
+    lenderName: row.lender_name ?? row.lenderName ?? 'Empréstimo',
+    borrower: (row.borrower as TransactionOwner) || 'shared',
+    amount: Number(row.amount || 0),
+    paidAmount: Number(row.paid_amount ?? row.paidAmount ?? 0),
+    borrowDate: row.borrow_date ?? row.borrowDate ?? '',
+    dueDate: row.due_date ?? row.dueDate ?? '',
+    status: (row.status === 'paid' ? 'paid' : 'pending') as 'pending' | 'paid',
+    notes: row.notes || undefined,
+    payments: parsedPayments,
+    created_at: row.created_at || new Date().toISOString(),
+    updated_at: row.updated_at || undefined,
+  };
+}
+
+export function loanToSupabasePayload(loan: Loan) {
+  return {
+    id: loan.id,
+    lender_name: loan.lenderName,
+    borrower: loan.borrower,
+    amount: loan.amount,
+    paid_amount: loan.paidAmount || 0,
+    borrow_date: loan.borrowDate,
+    due_date: loan.dueDate,
+    status: loan.status,
+    notes: loan.notes || null,
+    payments: loan.payments || [],
+    created_at: loan.created_at || new Date().toISOString(),
+    updated_at: loan.updated_at || new Date().toISOString(),
+  };
+}
+
+export function mapSupabaseChatMessage(row: any): ChatMessage {
+  return {
+    id: String(row.id),
+    sender: (row.sender as TransactionOwner) || 'partner1',
+    senderName: row.sender_name ?? row.senderName ?? 'Usuário',
+    text: row.text || '',
+    timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+  };
+}
+
+export function chatMessageToSupabasePayload(msg: ChatMessage) {
+  return {
+    id: msg.id,
+    sender: msg.sender,
+    sender_name: msg.senderName,
+    text: msg.text,
+    timestamp: msg.timestamp || new Date().toISOString(),
+  };
+}
+
+// --------------------------------------------------------
+// CONNECTION TEST
+// --------------------------------------------------------
+
+export async function testSupabaseConnection(
+  url?: string,
+  key?: string
+): Promise<{
+  success: boolean;
+  message: string;
+  tableExists: boolean;
+  tables: {
+    transactions: boolean;
+    loans: boolean;
+    chat_messages: boolean;
+  };
+}> {
   const targetUrl = (url || getStoredSupabaseConfig()?.url || '').trim();
   const targetKey = (key || getStoredSupabaseConfig()?.anonKey || '').trim();
 
@@ -91,47 +192,75 @@ export async function testSupabaseConnection(url?: string, key?: string): Promis
       success: false,
       message: 'URL e Anon Key do Supabase são obrigatórios.',
       tableExists: false,
+      tables: { transactions: false, loans: false, chat_messages: false },
     };
   }
 
   try {
     const testClient = createClient(targetUrl, targetKey);
-    // Tenta consultar a tabela transactions
-    const { data, error } = await testClient
-      .from('transactions')
-      .select('id')
-      .limit(1);
 
-    if (error) {
-      if (error.code === '42P01' || error.message?.includes('relation "public.transactions" does not exist') || error.message?.includes('transactions')) {
-        return {
-          success: true,
-          message: 'Conectado ao Supabase! Porém a tabela "transactions" ainda não foi criada. Copie o script SQL abaixo e execute no SQL Editor do Supabase.',
-          tableExists: false,
-        };
-      }
+    const [txRes, loansRes, chatRes] = await Promise.all([
+      testClient.from('transactions').select('id').limit(1),
+      testClient.from('loans').select('id').limit(1),
+      testClient.from('chat_messages').select('id').limit(1),
+    ]);
+
+    // Check errors
+    const isRelationMissing = (err: any) =>
+      err?.code === '42P01' ||
+      err?.message?.includes('does not exist') ||
+      err?.message?.includes('relation');
+
+    const tables = {
+      transactions: !txRes.error,
+      loans: !loansRes.error,
+      chat_messages: !chatRes.error,
+    };
+
+    // If there's an auth or invalid key error
+    if (txRes.error && !isRelationMissing(txRes.error)) {
       return {
         success: false,
-        message: `Erro do Supabase: ${error.message}`,
+        message: `Erro de autenticação/conexão: ${txRes.error.message}`,
         tableExists: false,
+        tables,
+      };
+    }
+
+    const missing: string[] = [];
+    if (!tables.transactions) missing.push('transactions');
+    if (!tables.loans) missing.push('loans');
+    if (!tables.chat_messages) missing.push('chat_messages');
+
+    if (missing.length === 0) {
+      return {
+        success: true,
+        message: 'Conexão estabelecida com sucesso! Todas as tabelas (transações, empréstimos e chat) estão prontas para tempo real.',
+        tableExists: true,
+        tables,
       };
     }
 
     return {
       success: true,
-      message: `Conexão estabelecida com sucesso! Tabela "transactions" pronta e sincronizada.`,
-      tableExists: true,
+      message: `Conectado ao Supabase! Porém, as seguintes tabelas precisam ser criadas: ${missing.join(', ')}. Copie o script SQL abaixo e execute no SQL Editor do Supabase.`,
+      tableExists: false,
+      tables,
     };
   } catch (err: any) {
     return {
       success: false,
       message: `Falha ao conectar: ${err?.message || 'Verifique a URL e a Anon Key fornecidas.'}`,
       tableExists: false,
+      tables: { transactions: false, loans: false, chat_messages: false },
     };
   }
 }
 
-// Fetch all transactions from Supabase
+// --------------------------------------------------------
+// TRANSACTIONS
+// --------------------------------------------------------
+
 export async function fetchSupabaseTransactions(): Promise<{ data: Transaction[] | null; error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -148,27 +277,13 @@ export async function fetchSupabaseTransactions(): Promise<{ data: Transaction[]
       return { data: null, error: error.message };
     }
 
-    const mapped: Transaction[] = (data || []).map((row: any) => ({
-      id: String(row.id),
-      description: row.description,
-      amount: Number(row.amount),
-      type: row.type as 'income' | 'expense',
-      category: row.category,
-      owner: row.owner as 'partner1' | 'partner2' | 'shared',
-      date: row.date,
-      payment_method: row.payment_method,
-      status: row.status as 'paid' | 'pending',
-      notes: row.notes || undefined,
-      created_at: row.created_at,
-    }));
-
+    const mapped: Transaction[] = (data || []).map(mapSupabaseTransaction);
     return { data: mapped, error: null };
   } catch (e: any) {
     return { data: null, error: e?.message || 'Erro ao carregar transações do Supabase' };
   }
 }
 
-// Save (insert or update) transaction in Supabase
 export async function saveSupabaseTransaction(tx: Transaction): Promise<{ error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -203,7 +318,6 @@ export async function saveSupabaseTransaction(tx: Transaction): Promise<{ error:
   }
 }
 
-// Delete transaction in Supabase
 export async function deleteSupabaseTransaction(id: string): Promise<{ error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -225,11 +339,13 @@ export async function deleteSupabaseTransaction(id: string): Promise<{ error: st
   }
 }
 
-// Bulk sync local transactions to Supabase
 export async function bulkUploadToSupabase(transactions: Transaction[]): Promise<{ count: number; error: string | null }> {
   const client = getSupabaseClient();
   if (!client) {
     return { count: 0, error: 'Supabase não configurado' };
+  }
+  if (transactions.length === 0) {
+    return { count: 0, error: null };
   }
 
   try {
@@ -246,7 +362,7 @@ export async function bulkUploadToSupabase(transactions: Transaction[]): Promise
       notes: tx.notes || null,
     }));
 
-    const { data, error } = await client
+    const { error } = await client
       .from('transactions')
       .upsert(payloads, { onConflict: 'id' });
 
@@ -260,9 +376,204 @@ export async function bulkUploadToSupabase(transactions: Transaction[]): Promise
   }
 }
 
-// SQL Script generator for the user
+// --------------------------------------------------------
+// LOANS (EMPRÉSTIMOS)
+// --------------------------------------------------------
+
+export async function fetchSupabaseLoans(): Promise<{ data: Loan[] | null; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { data: null, error: 'Supabase não configurado' };
+  }
+
+  try {
+    const { data, error } = await client
+      .from('loans')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    const mapped: Loan[] = (data || []).map(mapSupabaseLoan);
+    return { data: mapped, error: null };
+  } catch (e: any) {
+    return { data: null, error: e?.message || 'Erro ao carregar empréstimos do Supabase' };
+  }
+}
+
+export async function saveSupabaseLoan(loan: Loan): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Supabase não configurado' };
+  }
+
+  try {
+    const payload = loanToSupabasePayload(loan);
+    const { error } = await client
+      .from('loans')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message || 'Erro ao salvar empréstimo no Supabase' };
+  }
+}
+
+export async function deleteSupabaseLoan(id: string): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Supabase não configurado' };
+  }
+
+  try {
+    const { error } = await client
+      .from('loans')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message || 'Erro ao deletar empréstimo no Supabase' };
+  }
+}
+
+export async function bulkUploadLoansToSupabase(loans: Loan[]): Promise<{ count: number; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { count: 0, error: 'Supabase não configurado' };
+  }
+  if (loans.length === 0) {
+    return { count: 0, error: null };
+  }
+
+  try {
+    const payloads = loans.map(loanToSupabasePayload);
+    const { error } = await client
+      .from('loans')
+      .upsert(payloads, { onConflict: 'id' });
+
+    if (error) {
+      return { count: 0, error: error.message };
+    }
+    return { count: payloads.length, error: null };
+  } catch (e: any) {
+    return { count: 0, error: e?.message || 'Falha ao sincronizar empréstimos' };
+  }
+}
+
+// --------------------------------------------------------
+// CHAT MESSAGES (MENSAGENS)
+// --------------------------------------------------------
+
+export async function fetchSupabaseChatMessages(): Promise<{ data: ChatMessage[] | null; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { data: null, error: 'Supabase não configurado' };
+  }
+
+  try {
+    const { data, error } = await client
+      .from('chat_messages')
+      .select('*')
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    const mapped: ChatMessage[] = (data || []).map(mapSupabaseChatMessage);
+    return { data: mapped, error: null };
+  } catch (e: any) {
+    return { data: null, error: e?.message || 'Erro ao carregar mensagens do Supabase' };
+  }
+}
+
+export async function saveSupabaseChatMessage(message: ChatMessage): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Supabase não configurado' };
+  }
+
+  try {
+    const payload = chatMessageToSupabasePayload(message);
+    const { error } = await client
+      .from('chat_messages')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message || 'Erro ao salvar mensagem no Supabase' };
+  }
+}
+
+export async function deleteSupabaseChatMessage(id: string): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Supabase não configurado' };
+  }
+
+  try {
+    const { error } = await client
+      .from('chat_messages')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  } catch (e: any) {
+    return { error: e?.message || 'Erro ao deletar mensagem no Supabase' };
+  }
+}
+
+export async function bulkUploadChatMessagesToSupabase(messages: ChatMessage[]): Promise<{ count: number; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { count: 0, error: 'Supabase não configurado' };
+  }
+  if (messages.length === 0) {
+    return { count: 0, error: null };
+  }
+
+  try {
+    const payloads = messages.map(chatMessageToSupabasePayload);
+    const { error } = await client
+      .from('chat_messages')
+      .upsert(payloads, { onConflict: 'id' });
+
+    if (error) {
+      return { count: 0, error: error.message };
+    }
+    return { count: payloads.length, error: null };
+  } catch (e: any) {
+    return { count: 0, error: e?.message || 'Falha ao sincronizar mensagens' };
+  }
+}
+
+// --------------------------------------------------------
+// SQL SCHEMA SCRIPT
+// --------------------------------------------------------
+
 export function getSupabaseSqlSchema(): string {
-  return `-- 1. Criar a tabela de transações compartilhadas do casal
+  return `-- ========================================================
+-- SCRIPT SQL: FINANÇAS DO CASAL (SUPABASE FULL SYNC)
+-- Execute este script no SQL Editor do seu projeto Supabase:
+-- https://supabase.com/dashboard/project/_/sql
+-- ========================================================
+
+-- 1. TABELA DE TRANSAÇÕES
 create table if not exists public.transactions (
   id text primary key,
   description text not null,
@@ -277,19 +588,74 @@ create table if not exists public.transactions (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 2. Habilitar Row Level Security (RLS) com acesso para a chave anônima (anon)
+-- 2. TABELA DE EMPRÉSTIMOS
+create table if not exists public.loans (
+  id text primary key,
+  lender_name text not null,
+  borrower text not null check (borrower in ('partner1', 'partner2', 'shared')),
+  amount numeric(12, 2) not null,
+  paid_amount numeric(12, 2) not null default 0,
+  borrow_date text not null,
+  due_date text not null,
+  status text not null check (status in ('pending', 'paid')),
+  notes text,
+  payments jsonb not null default '[]'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone
+);
+
+-- 3. TABELA DE MENSAGENS (CHAT DO CASAL)
+create table if not exists public.chat_messages (
+  id text primary key,
+  sender text not null check (sender in ('partner1', 'partner2', 'shared')),
+  sender_name text not null,
+  text text not null,
+  timestamp text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 4. HABILITAR ROW LEVEL SECURITY (RLS)
 alter table public.transactions enable row level security;
+alter table public.loans enable row level security;
+alter table public.chat_messages enable row level security;
 
--- 3. Criar política de leitura e escrita pública
-drop policy if exists "Acesso total as transações do casal" on public.transactions;
-create policy "Acesso total as transações do casal"
-  on public.transactions
-  for all
-  using (true)
-  with check (true);
+-- 5. REPLICA IDENTITY FULL (Para capturar DELETE e UPDATE completos no Realtime)
+alter table public.transactions replica identity full;
+alter table public.loans replica identity full;
+alter table public.chat_messages replica identity full;
 
--- 4. Habilitar a publicação em Tempo Real (Realtime)
--- Isso garante que toda alteração apareça instantaneamente no celular da Raisa e no seu!
-alter publication supabase_realtime add table public.transactions;
+-- 6. POLÍTICAS DE ACESSO TOTAL PARA CHAVE ANÔNIMA (ANON)
+drop policy if exists "Acesso total as transacoes do casal" on public.transactions;
+create policy "Acesso total as transacoes do casal"
+  on public.transactions for all
+  using (true) with check (true);
+
+drop policy if exists "Acesso total aos emprestimos do casal" on public.loans;
+create policy "Acesso total aos emprestimos do casal"
+  on public.loans for all
+  using (true) with check (true);
+
+drop policy if exists "Acesso total ao chat do casal" on public.chat_messages;
+create policy "Acesso total ao chat do casal"
+  on public.chat_messages for all
+  using (true) with check (true);
+
+-- 7. HABILITAR PUBLICAÇÃO EM TEMPO REAL (SUPABASE REALTIME)
+-- Permite que transações, empréstimos e chat sincronizem instantaneamente entre celulares!
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.transactions;
+  exception when others then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.loans;
+  exception when others then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.chat_messages;
+  exception when others then null;
+  end;
+end $$;
 `;
 }

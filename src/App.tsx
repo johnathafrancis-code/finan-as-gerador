@@ -14,6 +14,7 @@ import { TransactionList } from './components/TransactionList';
 import { LoansView } from './components/LoansView';
 import { VaultView } from './components/VaultView';
 import { ChatView } from './components/ChatView';
+import { ChartsView } from './components/ChartsView';
 import { TransactionModal } from './components/TransactionModal';
 import { SupabaseModal } from './components/SupabaseModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -30,7 +31,7 @@ const DashboardContent: React.FC = () => {
     partners,
   } = useFinance();
 
-  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'loans' | 'vault' | 'chat'>('dashboard');
+  const [currentTab, setCurrentTab] = useState<'dashboard' | 'transactions' | 'charts' | 'loans' | 'vault' | 'chat'>('dashboard');
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -151,7 +152,14 @@ const DashboardContent: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: EMPRESTADO */}
+          {/* TAB 3: GRÁFICOS & ANÁLISES */}
+          {currentTab === 'charts' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              <ChartsView />
+            </div>
+          )}
+
+          {/* TAB 4: EMPRESTADO */}
           {currentTab === 'loans' && (
             <div className="space-y-3.5 animate-in fade-in duration-150">
               <LoansView />

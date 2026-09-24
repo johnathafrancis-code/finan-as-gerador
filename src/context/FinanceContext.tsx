@@ -7,7 +7,17 @@ import {
   fetchSupabaseTransactions, 
   saveSupabaseTransaction, 
   deleteSupabaseTransaction,
-  bulkUploadToSupabase 
+  bulkUploadToSupabase,
+  fetchSupabaseLoans,
+  saveSupabaseLoan,
+  deleteSupabaseLoan,
+  bulkUploadLoansToSupabase,
+  fetchSupabaseChatMessages,
+  saveSupabaseChatMessage,
+  deleteSupabaseChatMessage,
+  bulkUploadChatMessagesToSupabase,
+  mapSupabaseLoan,
+  mapSupabaseChatMessage,
 } from '../lib/supabase';
 import { getCurrentMonthString, formatCurrency } from '../utils/formatters';
 import { playSyncChime } from '../utils/sound';
@@ -293,11 +303,30 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Load from backend API initially
   const loadInitialData = useCallback(async () => {
     try {
-      const res = await fetch('/api/transactions');
-      if (res.ok) {
-        const json = await res.json();
+      const [txRes, loansRes, chatRes] = await Promise.all([
+        fetch('/api/transactions').catch(() => null),
+        fetch('/api/loans').catch(() => null),
+        fetch('/api/chat').catch(() => null),
+      ]);
+
+      if (txRes && txRes.ok) {
+        const json = await txRes.json();
         if (Array.isArray(json.transactions) && json.transactions.length > 0) {
           setTransactions(json.transactions);
+        }
+      }
+
+      if (loansRes && loansRes.ok) {
+        const json = await loansRes.json();
+        if (Array.isArray(json.loans) && json.loans.length > 0) {
+          setLoans(json.loans);
+        }
+      }
+
+      if (chatRes && chatRes.ok) {
+        const json = await chatRes.json();
+        if (Array.isArray(json.messages) && json.messages.length > 0) {
+          setChatMessages(json.messages);
         }
       }
     } catch (e) {
@@ -477,30 +506,40 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     setSupabaseStatus(prev => ({ ...prev, isConfigured: true, isSyncing: true, error: null }));
-    const { data, error } = await fetchSupabaseTransactions();
 
-    if (error) {
+    try {
+      const [txRes, loansRes, chatRes] = await Promise.all([
+        fetchSupabaseTransactions(),
+        fetchSupabaseLoans(),
+        fetchSupabaseChatMessages(),
+      ]);
+
+      if (txRes.data && txRes.data.length > 0) {
+        setTransactions(txRes.data);
+      }
+      if (loansRes.data && loansRes.data.length > 0) {
+        setLoans(loansRes.data);
+      }
+      if (chatRes.data && chatRes.data.length > 0) {
+        setChatMessages(chatRes.data);
+      }
+
+      const errors = [txRes.error, loansRes.error, chatRes.error].filter(Boolean);
+      const isConnected = errors.length === 0;
+
+      setSupabaseStatus({
+        isConfigured: true,
+        isConnected,
+        isSyncing: false,
+        error: errors.length > 0 ? errors.join('; ') : null,
+        lastEventTime: new Date().toLocaleTimeString('pt-BR'),
+      });
+    } catch (err: any) {
       setSupabaseStatus({
         isConfigured: true,
         isConnected: false,
         isSyncing: false,
-        error,
-      });
-    } else if (data && data.length > 0) {
-      setTransactions(data);
-      setSupabaseStatus({
-        isConfigured: true,
-        isConnected: true,
-        isSyncing: false,
-        error: null,
-        lastEventTime: new Date().toLocaleTimeString('pt-BR'),
-      });
-    } else {
-      setSupabaseStatus({
-        isConfigured: true,
-        isConnected: true,
-        isSyncing: false,
-        error: null,
+        error: err?.message || 'Erro ao carregar dados do Supabase',
       });
     }
   }, []);
@@ -509,7 +548,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     loadSupabaseData();
   }, [loadSupabaseData]);
 
-  // Supabase Realtime WebSocket subscription
+  // Supabase Realtime WebSocket subscription for transactions, loans, and chat_messages
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) return;
@@ -517,7 +556,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let isSubscribed = true;
 
     const channel = client
-      .channel('schema-db-changes')
+      .channel('financas-casal-realtime')
+      // 1. Transactions subscription
       .on(
         'postgres_changes',
         {
@@ -584,22 +624,136 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setTransactions(prev =>
               prev.map(t => (t.id === updatedTx.id ? updatedTx : t))
             );
-            setNotification(`⚡ Transação atualizada em tempo real: "${updatedTx.description}"`);
+            setNotification(`⚡ Transação atualizada via Supabase: "${updatedTx.description}"`);
           } else if (payload.eventType === 'DELETE') {
-            const deletedId = String((payload.old as any).id);
-            setTransactions(prev => prev.filter(t => t.id !== deletedId));
-            setNotification(`⚡ Transação removida em tempo real.`);
+            const deletedId = String((payload.old as any)?.id);
+            if (deletedId) {
+              setTransactions(prev => prev.filter(t => t.id !== deletedId));
+              setNotification(`⚡ Transação removida via Supabase.`);
+            }
           }
         }
       )
-      .subscribe((status) => {
+      // 2. Loans subscription (Empréstimos em tempo real)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'loans',
+        },
+        (payload) => {
+          if (!isSubscribed) return;
+
+          const nowStr = new Date().toLocaleTimeString('pt-BR');
+          setSupabaseStatus(prev => ({
+            ...prev,
+            isConnected: true,
+            lastEventTime: nowStr,
+          }));
+
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new as any;
+            const newLoan = mapSupabaseLoan(newRow);
+
+            setLoans(prev => {
+              if (prev.some(l => l.id === newLoan.id)) {
+                return prev.map(l => l.id === newLoan.id ? newLoan : l);
+              }
+              return [newLoan, ...prev];
+            });
+
+            if (soundEnabled) {
+              playSyncChime();
+            }
+
+            const borrowerName = newLoan.borrower === 'partner1'
+              ? partners.partner1Name
+              : (newLoan.borrower === 'partner2' ? partners.partner2Name : 'Casal');
+
+            setNotification(`⚡ Empréstimo sincronizado via Supabase: "${newLoan.lenderName}" (${borrowerName})`);
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRow = payload.new as any;
+            const updatedLoan = mapSupabaseLoan(updatedRow);
+
+            setLoans(prev => {
+              const exists = prev.some(l => l.id === updatedLoan.id);
+              if (!exists) return [updatedLoan, ...prev];
+              return prev.map(l => (l.id === updatedLoan.id ? updatedLoan : l));
+            });
+
+            if (soundEnabled) {
+              playSyncChime();
+            }
+
+            setNotification(`⚡ Empréstimo atualizado via Supabase: "${updatedLoan.lenderName}"`);
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = String((payload.old as any)?.id);
+            if (deletedId) {
+              setLoans(prev => prev.filter(l => l.id !== deletedId));
+              setNotification(`⚡ Empréstimo removido no Supabase.`);
+            }
+          }
+        }
+      )
+      // 3. Chat Messages subscription (Mensagens em tempo real)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_messages',
+        },
+        (payload) => {
+          if (!isSubscribed) return;
+
+          const nowStr = new Date().toLocaleTimeString('pt-BR');
+          setSupabaseStatus(prev => ({
+            ...prev,
+            isConnected: true,
+            lastEventTime: nowStr,
+          }));
+
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new as any;
+            const newMsg = mapSupabaseChatMessage(newRow);
+
+            setChatMessages(prev => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+
+            if (soundEnabled) {
+              playSyncChime();
+            }
+
+            if (newMsg.sender !== activeDeviceUser) {
+              const preview = newMsg.text.length > 35 ? `${newMsg.text.slice(0, 35)}...` : newMsg.text;
+              setNotification(`💬 Mensagem de ${newMsg.senderName}: "${preview}"`);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRow = payload.new as any;
+            const updatedMsg = mapSupabaseChatMessage(updatedRow);
+
+            setChatMessages(prev =>
+              prev.map(m => (m.id === updatedMsg.id ? updatedMsg : m))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = String((payload.old as any)?.id);
+            if (deletedId) {
+              setChatMessages(prev => prev.filter(m => m.id !== deletedId));
+            }
+          }
+        }
+      )
+      .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           setSupabaseStatus(prev => ({ ...prev, isConnected: true, error: null }));
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setSupabaseStatus(prev => ({
             ...prev,
             isConnected: false,
-            error: 'Canal de tempo real desconectado',
+            error: err?.message || 'Canal de tempo real desconectado',
           }));
         }
       });
@@ -608,7 +762,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isSubscribed = false;
       client.removeChannel(channel);
     };
-  }, [partners.partner1Name, partners.partner2Name, soundEnabled, supabaseStatus.isConfigured]);
+  }, [partners.partner1Name, partners.partner2Name, activeDeviceUser, soundEnabled, supabaseStatus.isConfigured]);
 
   // Actions
   const addTransaction = async (data: Omit<Transaction, 'id'>): Promise<boolean> => {
@@ -759,12 +913,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const migrateLocalToSupabase = async () => {
     setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
-    const result = await bulkUploadToSupabase(transactions);
-    setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: result.error }));
-    if (!result.error) {
-      setNotification(`Sucesso! ${result.count} transações enviadas para o Supabase.`);
+    const [txRes, loansRes, chatRes] = await Promise.all([
+      bulkUploadToSupabase(transactions),
+      bulkUploadLoansToSupabase(loans),
+      bulkUploadChatMessagesToSupabase(chatMessages),
+    ]);
+
+    const anyError = txRes.error || loansRes.error || chatRes.error;
+    setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: anyError }));
+    if (!anyError) {
+      setNotification(
+        `Sucesso! Sincronizados no Supabase: ${txRes.count} transações, ${loansRes.count} empréstimos e ${chatRes.count} mensagens!`
+      );
     }
-    return result;
+    return {
+      count: txRes.count + loansRes.count + chatRes.count,
+      error: anyError,
+    };
   };
 
   const addVaultGoal = async (
@@ -914,6 +1079,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setLoans(prev => [newLoan, ...prev]);
 
+    // Local backend sync
     try {
       fetch('/api/loans', {
         method: 'POST',
@@ -925,12 +1091,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error(e));
     } catch (e) {}
 
+    // Supabase Cloud Real-time
+    if (supabaseStatus.isConfigured) {
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
+      const { error } = await saveSupabaseLoan(newLoan);
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+      if (error) {
+        setNotification(`Erro ao salvar empréstimo no Supabase: ${error}`);
+        return false;
+      }
+    }
+
     if (soundEnabled) playSyncChime();
     return true;
   };
 
   const updateLoan = async (loan: Loan): Promise<boolean> => {
     setLoans(prev => prev.map(l => (l.id === loan.id ? loan : l)));
+
     try {
       fetch('/api/loans', {
         method: 'POST',
@@ -941,12 +1119,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         body: JSON.stringify(loan),
       }).catch(e => console.error(e));
     } catch (e) {}
+
+    if (supabaseStatus.isConfigured) {
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
+      const { error } = await saveSupabaseLoan(loan);
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+      if (error) {
+        setNotification(`Erro ao atualizar empréstimo no Supabase: ${error}`);
+        return false;
+      }
+    }
+
     if (soundEnabled) playSyncChime();
     return true;
   };
 
   const deleteLoan = async (id: string): Promise<boolean> => {
     setLoans(prev => prev.filter(l => l.id !== id));
+
     try {
       fetch(`/api/loans/${id}`, {
         method: 'DELETE',
@@ -955,6 +1145,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       }).catch(e => console.error(e));
     } catch (e) {}
+
+    if (supabaseStatus.isConfigured) {
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
+      const { error } = await deleteSupabaseLoan(id);
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+      if (error) {
+        setNotification(`Erro ao deletar empréstimo no Supabase: ${error}`);
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -1000,6 +1201,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error(e));
     } catch (e) {}
 
+    if (supabaseStatus.isConfigured) {
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
+      const { error } = await saveSupabaseLoan(updatedLoan);
+      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+      if (error) {
+        setNotification(`Erro ao salvar pagamento no Supabase: ${error}`);
+        return false;
+      }
+    }
+
     if (soundEnabled) playSyncChime();
     return true;
   };
@@ -1029,12 +1240,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error(e));
     } catch (e) {}
 
+    if (supabaseStatus.isConfigured) {
+      saveSupabaseChatMessage(newMsg).catch(e => {
+        console.error('Erro ao enviar mensagem no Supabase:', e);
+      });
+    }
+
     if (soundEnabled) playSyncChime();
     return true;
   };
 
   const deleteChatMessage = async (id: string): Promise<boolean> => {
     setChatMessages(prev => prev.filter(m => m.id !== id));
+
     try {
       fetch(`/api/chat/${id}`, {
         method: 'DELETE',
@@ -1043,6 +1261,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
       }).catch(e => console.error(e));
     } catch (e) {}
+
+    if (supabaseStatus.isConfigured) {
+      deleteSupabaseChatMessage(id).catch(e => {
+        console.error('Erro ao excluir mensagem no Supabase:', e);
+      });
+    }
+
     return true;
   };
 

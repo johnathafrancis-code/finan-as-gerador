@@ -24,7 +24,7 @@ interface SupabaseModalProps {
 }
 
 export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose }) => {
-  const { supabaseStatus, refreshTransactions } = useFinance();
+  const { supabaseStatus, refreshTransactions, migrateLocalToSupabase } = useFinance();
 
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
@@ -32,8 +32,14 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     success: boolean;
     message: string;
     tableExists: boolean;
+    tables?: {
+      transactions: boolean;
+      loans: boolean;
+      chat_messages: boolean;
+    };
   } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
@@ -69,6 +75,12 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
     setAnonKey('');
     setTestResult(null);
     await refreshTransactions();
+  };
+
+  const handleMigrate = async () => {
+    setIsMigrating(true);
+    await migrateLocalToSupabase();
+    setIsMigrating(false);
   };
 
   const copySqlToClipboard = () => {
@@ -168,20 +180,37 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
             {/* Test result message */}
             {testResult && (
               <div
-                className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                className={`p-3 rounded-xl border text-xs space-y-2 ${
                   testResult.success
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-rose-50/70 border-rose-200 text-rose-900'
                 }`}
               >
-                {testResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <span className="font-semibold block">{testResult.message}</span>
+                <div className="flex items-start gap-2">
+                  {testResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <span className="font-semibold block leading-tight">{testResult.message}</span>
                 </div>
+
+                {testResult.tables && (
+                  <div className="pt-2 border-t border-emerald-200/60 grid grid-cols-3 gap-1.5 text-[11px]">
+                    <div className={`px-2 py-1 rounded-lg border flex items-center gap-1 font-medium ${testResult.tables.transactions ? 'bg-white text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-800 border-rose-300'}`}>
+                      {testResult.tables.transactions ? <Check className="w-3 h-3 text-emerald-600" /> : <AlertCircle className="w-3 h-3 text-rose-600" />}
+                      <span className="truncate">Transações</span>
+                    </div>
+                    <div className={`px-2 py-1 rounded-lg border flex items-center gap-1 font-medium ${testResult.tables.loans ? 'bg-white text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-800 border-rose-300'}`}>
+                      {testResult.tables.loans ? <Check className="w-3 h-3 text-emerald-600" /> : <AlertCircle className="w-3 h-3 text-rose-600" />}
+                      <span className="truncate">Empréstimos</span>
+                    </div>
+                    <div className={`px-2 py-1 rounded-lg border flex items-center gap-1 font-medium ${testResult.tables.chat_messages ? 'bg-white text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-800 border-rose-300'}`}>
+                      {testResult.tables.chat_messages ? <Check className="w-3 h-3 text-emerald-600" /> : <AlertCircle className="w-3 h-3 text-rose-600" />}
+                      <span className="truncate">Chat Casal</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -207,13 +236,24 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({ isOpen, onClose })
             </div>
 
             {supabaseStatus.isConfigured && (
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                className="w-full py-1.5 text-rose-600 hover:text-rose-700 text-[11px] font-semibold cursor-pointer"
-              >
-                Desconectar Supabase
-              </button>
+              <div className="space-y-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleMigrate}
+                  disabled={isMigrating}
+                  className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>{isMigrating ? 'Sincronizando...' : 'Enviar Dados Locais para o Supabase (Upload)'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="w-full py-1.5 text-rose-600 hover:text-rose-700 text-[11px] font-semibold cursor-pointer"
+                >
+                  Desconectar Supabase
+                </button>
+              </div>
             )}
           </div>
 
