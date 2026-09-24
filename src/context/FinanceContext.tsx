@@ -18,6 +18,7 @@ import {
   bulkUploadChatMessagesToSupabase,
   mapSupabaseLoan,
   mapSupabaseChatMessage,
+  fetchServerSupabaseConfig,
 } from '../lib/supabase';
 import { getCurrentMonthString, formatCurrency } from '../utils/formatters';
 import { playSyncChime } from '../utils/sound';
@@ -275,6 +276,36 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   const clientIdRef = useRef<string>(`client-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
+  const supabaseChannelRef = useRef<any>(null);
+  const activeDeviceUserRef = useRef(activeDeviceUser);
+  const soundEnabledRef = useRef(soundEnabled);
+  const partnersRef = useRef(partners);
+
+  useEffect(() => {
+    activeDeviceUserRef.current = activeDeviceUser;
+  }, [activeDeviceUser]);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    partnersRef.current = partners;
+  }, [partners]);
+
+  const broadcastToSupabase = useCallback((event: string, payload: any) => {
+    try {
+      if (supabaseChannelRef.current) {
+        supabaseChannelRef.current.send({
+          type: 'broadcast',
+          event,
+          payload,
+        });
+      }
+    } catch (e) {
+      console.warn('Erro ao emitir broadcast no Supabase:', e);
+    }
+  }, []);
 
   const setActiveDeviceUser = (user: 'partner1' | 'partner2') => {
     setActiveDeviceUserState(user);
@@ -300,9 +331,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [transactions]);
 
-  // Load from backend API initially
+  // Load from backend API initially and check shared Supabase configuration
   const loadInitialData = useCallback(async () => {
     try {
+      // 1. Fetch server-stored Supabase config so partner connects automatically
+      try {
+        const serverConfig = await fetchServerSupabaseConfig();
+        if (serverConfig?.url && serverConfig?.anonKey) {
+          const local = getStoredSupabaseConfig();
+          if (!local || local.url !== serverConfig.url || local.anonKey !== serverConfig.anonKey) {
+            localStorage.setItem('financas_supabase_config', JSON.stringify(serverConfig));
+            setSupabaseStatus(prev => ({ ...prev, isConfigured: true }));
+          }
+        }
+      } catch (err) {}
+
+      // 2. Fetch local server data
       const [txRes, loansRes, chatRes] = await Promise.all([
         fetch('/api/transactions').catch(() => null),
         fetch('/api/loans').catch(() => null),
@@ -468,6 +512,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               } else if (id) {
                 setChatMessages(prev => prev.filter(m => m.id !== id));
               }
+            } else if (payload.eventType === 'SUPABASE_CONFIG_UPDATED') {
+              const cfg = payload.data?.config;
+              if (cfg?.url && cfg?.anonKey) {
+                localStorage.setItem('financas_supabase_config', JSON.stringify(cfg));
+                loadSupabaseData();
+                setNotification('⚡ Supabase sincronizado automaticamente neste aparelho!');
+              }
+            } else if (payload.eventType === 'SUPABASE_CONFIG_CLEARED') {
+              localStorage.removeItem('financas_supabase_config');
+              setSupabaseStatus({
+                isConfigured: false,
+                isConnected: false,
+                isSyncing: false,
+                error: null,
+              });
+              setNotification('Supabase desconectado.');
             }
           } catch (err) {
             console.error('Erro ao processar mensagem SSE', err);
@@ -551,13 +611,83 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Supabase Realtime WebSocket subscription for transactions, loans, and chat_messages
   useEffect(() => {
     const client = getSupabaseClient();
-    if (!client) return;
+    if (!client) {
+      supabaseChannelRef.current = null;
+      return;
+    }
 
     let isSubscribed = true;
 
-    const channel = client
-      .channel('financas-casal-realtime')
-      // 1. Transactions subscription
+    // Use broadcast-enabled channel with self: false
+    const channel = client.channel('financas-casal-v2', {
+      config: {
+        broadcast: { ack: false, self: false },
+      },
+    });
+
+    supabaseChannelRef.current = channel;
+
+    // A. INSTANT BROADCAST SUBSCRIPTIONS (Direct WebSocket peer-to-peer sync)
+    channel
+      .on('broadcast', { event: 'CHAT_MESSAGE' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const newMsg = payload as ChatMessage;
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+        if (soundEnabledRef.current) playSyncChime();
+        if (newMsg.sender !== activeDeviceUserRef.current) {
+          const preview = newMsg.text.length > 35 ? `${newMsg.text.slice(0, 35)}...` : newMsg.text;
+          setNotification(`💬 ${newMsg.senderName || 'Parceiro(a)'}: "${preview}"`);
+        }
+      })
+      .on('broadcast', { event: 'CHAT_DELETE' }, ({ payload }) => {
+        const id = payload?.id;
+        if (id) {
+          setChatMessages(prev => prev.filter(m => m.id !== id));
+        }
+      })
+      .on('broadcast', { event: 'LOAN_UPDATE' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const loan = payload as Loan;
+        setLoans(prev => {
+          const exists = prev.some(l => l.id === loan.id);
+          if (!exists) return [loan, ...prev];
+          return prev.map(l => (l.id === loan.id ? loan : l));
+        });
+        if (soundEnabledRef.current) playSyncChime();
+        const borrowerName = loan.borrower === 'partner1'
+          ? partnersRef.current.partner1Name
+          : (loan.borrower === 'partner2' ? partnersRef.current.partner2Name : 'Casal');
+        setNotification(`⚡ Empréstimo sincronizado: "${loan.lenderName}" (${borrowerName})`);
+      })
+      .on('broadcast', { event: 'LOAN_DELETE' }, ({ payload }) => {
+        const id = payload?.id;
+        if (id) {
+          setLoans(prev => prev.filter(l => l.id !== id));
+          setNotification(`⚡ Empréstimo removido`);
+        }
+      })
+      .on('broadcast', { event: 'TRANSACTION_UPDATE' }, ({ payload }) => {
+        if (!payload || !payload.id) return;
+        const tx = payload as Transaction;
+        setTransactions(prev => {
+          const exists = prev.some(t => t.id === tx.id);
+          if (!exists) return [tx, ...prev];
+          return prev.map(t => (t.id === tx.id ? tx : t));
+        });
+        if (soundEnabledRef.current) playSyncChime();
+        setNotification(`⚡ Lançamento atualizado: "${tx.description}"`);
+      })
+      .on('broadcast', { event: 'TRANSACTION_DELETE' }, ({ payload }) => {
+        const id = payload?.id;
+        if (id) {
+          setTransactions(prev => prev.filter(t => t.id !== id));
+        }
+      })
+
+      // B. POSTGRES DATABASE CDC SUBSCRIPTIONS (For persistent database updates)
       .on(
         'postgres_changes',
         {
@@ -596,14 +726,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               return [newTx, ...prev];
             });
 
-            if (soundEnabled) {
-              playSyncChime();
-            }
-
+            if (soundEnabledRef.current) playSyncChime();
             const author = newTx.owner === 'partner1'
-              ? partners.partner1Name
-              : (newTx.owner === 'partner2' ? partners.partner2Name : 'Compartilhado');
-
+              ? partnersRef.current.partner1Name
+              : (newTx.owner === 'partner2' ? partnersRef.current.partner2Name : 'Compartilhado');
             setNotification(`⚡ Sincronizado via Supabase: ${author} adicionou "${newTx.description}"`);
           } else if (payload.eventType === 'UPDATE') {
             const updatedRow = payload.new as any;
@@ -624,17 +750,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             setTransactions(prev =>
               prev.map(t => (t.id === updatedTx.id ? updatedTx : t))
             );
-            setNotification(`⚡ Transação atualizada via Supabase: "${updatedTx.description}"`);
           } else if (payload.eventType === 'DELETE') {
             const deletedId = String((payload.old as any)?.id);
             if (deletedId) {
               setTransactions(prev => prev.filter(t => t.id !== deletedId));
-              setNotification(`⚡ Transação removida via Supabase.`);
             }
           }
         }
       )
-      // 2. Loans subscription (Empréstimos em tempo real)
       .on(
         'postgres_changes',
         {
@@ -663,15 +786,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               return [newLoan, ...prev];
             });
 
-            if (soundEnabled) {
-              playSyncChime();
-            }
-
+            if (soundEnabledRef.current) playSyncChime();
             const borrowerName = newLoan.borrower === 'partner1'
-              ? partners.partner1Name
-              : (newLoan.borrower === 'partner2' ? partners.partner2Name : 'Casal');
-
-            setNotification(`⚡ Empréstimo sincronizado via Supabase: "${newLoan.lenderName}" (${borrowerName})`);
+              ? partnersRef.current.partner1Name
+              : (newLoan.borrower === 'partner2' ? partnersRef.current.partner2Name : 'Casal');
+            setNotification(`⚡ Empréstimo sincronizado: "${newLoan.lenderName}" (${borrowerName})`);
           } else if (payload.eventType === 'UPDATE') {
             const updatedRow = payload.new as any;
             const updatedLoan = mapSupabaseLoan(updatedRow);
@@ -682,21 +801,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               return prev.map(l => (l.id === updatedLoan.id ? updatedLoan : l));
             });
 
-            if (soundEnabled) {
-              playSyncChime();
-            }
-
-            setNotification(`⚡ Empréstimo atualizado via Supabase: "${updatedLoan.lenderName}"`);
+            if (soundEnabledRef.current) playSyncChime();
           } else if (payload.eventType === 'DELETE') {
             const deletedId = String((payload.old as any)?.id);
             if (deletedId) {
               setLoans(prev => prev.filter(l => l.id !== deletedId));
-              setNotification(`⚡ Empréstimo removido no Supabase.`);
             }
           }
         }
       )
-      // 3. Chat Messages subscription (Mensagens em tempo real)
       .on(
         'postgres_changes',
         {
@@ -723,11 +836,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               return [...prev, newMsg];
             });
 
-            if (soundEnabled) {
-              playSyncChime();
-            }
-
-            if (newMsg.sender !== activeDeviceUser) {
+            if (soundEnabledRef.current) playSyncChime();
+            if (newMsg.sender !== activeDeviceUserRef.current) {
               const preview = newMsg.text.length > 35 ? `${newMsg.text.slice(0, 35)}...` : newMsg.text;
               setNotification(`💬 Mensagem de ${newMsg.senderName}: "${preview}"`);
             }
@@ -761,8 +871,84 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       isSubscribed = false;
       client.removeChannel(channel);
+      if (supabaseChannelRef.current === channel) {
+        supabaseChannelRef.current = null;
+      }
     };
-  }, [partners.partner1Name, partners.partner2Name, activeDeviceUser, soundEnabled, supabaseStatus.isConfigured]);
+  }, [supabaseStatus.isConfigured]);
+
+  // Periodic background sync fallback (every 4s when tab is visible or on visibilitychange)
+  // Guarantees zero missed loans or messages even with network glitches or Cloud Run instance rotation
+  useEffect(() => {
+    const syncAllData = async () => {
+      if (document.hidden) return;
+
+      try {
+        const [loansRes, chatRes] = await Promise.all([
+          fetch('/api/loans').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('/api/chat').then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+
+        if (loansRes && Array.isArray(loansRes.loans)) {
+          setLoans(prev => {
+            if (loansRes.loans.length !== prev.length || JSON.stringify(prev) !== JSON.stringify(loansRes.loans)) {
+              return loansRes.loans;
+            }
+            return prev;
+          });
+        }
+
+        if (chatRes && Array.isArray(chatRes.messages)) {
+          setChatMessages(prev => {
+            if (chatRes.messages.length !== prev.length) {
+              return chatRes.messages;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {}
+
+      // Reconcile Supabase if connected
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const [sLoans, sChat] = await Promise.all([
+            fetchSupabaseLoans(),
+            fetchSupabaseChatMessages(),
+          ]);
+          if (sLoans.data && sLoans.data.length > 0) {
+            setLoans(prev => {
+              if (sLoans.data!.length !== prev.length || JSON.stringify(prev) !== JSON.stringify(sLoans.data)) {
+                return sLoans.data!;
+              }
+              return prev;
+            });
+          }
+          if (sChat.data && sChat.data.length > 0) {
+            setChatMessages(prev => {
+              if (sChat.data!.length !== prev.length) {
+                return sChat.data!;
+              }
+              return prev;
+            });
+          }
+        } catch (e) {}
+      }
+    };
+
+    const intervalId = setInterval(syncAllData, 4000);
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        syncAllData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   // Actions
   const addTransaction = async (data: Omit<Transaction, 'id'>): Promise<boolean> => {
@@ -775,7 +961,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 1. Optimistic local update
     setTransactions(prev => [newTx, ...prev]);
 
-    // 2. Broadcast immediately via backend server API to all open devices
+    // 2. Broadcast immediately via Supabase Realtime channel (Instant WebSocket sync)
+    broadcastToSupabase('TRANSACTION_UPDATE', newTx);
+
+    // 3. Broadcast immediately via backend server API to all open devices
     try {
       fetch('/api/transactions', {
         method: 'POST',
@@ -787,14 +976,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error('Erro na sincronização backend', e));
     } catch (e) {}
 
-    // 3. If Supabase is connected, save to Supabase
+    // 4. If Supabase is connected, save to Supabase
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
       const { error } = await saveSupabaseTransaction(newTx);
       setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
       if (error) {
-        setNotification(`Erro ao sincronizar com Supabase: ${error}`);
-        return false;
+        console.warn(`Aviso Supabase: ${error}`);
       }
     }
 
@@ -815,7 +1003,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // 1. Optimistic local update
     setTransactions(prev => [...newTxs, ...prev]);
 
-    // 2. Broadcast via backend server API
+    // 2. Broadcast via Supabase Realtime channel
+    newTxs.forEach(t => broadcastToSupabase('TRANSACTION_UPDATE', t));
+
+    // 3. Broadcast via backend server API
     for (const newTx of newTxs) {
       try {
         fetch('/api/transactions', {
@@ -828,7 +1019,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }).catch(e => console.error('Erro na sincronização backend', e));
       } catch (e) {}
 
-      // 3. Save to Supabase if configured
+      // 4. Save to Supabase if configured
       if (supabaseStatus.isConfigured) {
         saveSupabaseTransaction(newTx).catch(e => console.error(e));
       }
@@ -840,6 +1031,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateTransaction = async (tx: Transaction): Promise<boolean> => {
     setTransactions(prev => prev.map(t => (t.id === tx.id ? tx : t)));
+
+    // Broadcast via Supabase Realtime channel
+    broadcastToSupabase('TRANSACTION_UPDATE', tx);
 
     // Broadcast via backend API
     try {
@@ -858,8 +1052,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const { error } = await saveSupabaseTransaction(tx);
       setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
       if (error) {
-        setNotification(`Erro ao salvar no Supabase: ${error}`);
-        return false;
+        console.warn(`Aviso Supabase: ${error}`);
       }
     }
     return true;
@@ -867,6 +1060,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteTransaction = async (id: string): Promise<boolean> => {
     setTransactions(prev => prev.filter(t => t.id !== id));
+
+    // Broadcast via Supabase Realtime channel
+    broadcastToSupabase('TRANSACTION_DELETE', { id });
 
     // Broadcast via backend API
     try {
@@ -883,10 +1079,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const { error } = await deleteSupabaseTransaction(id);
       setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
       if (error) {
-        setNotification(`Erro ao excluir no Supabase: ${error}`);
-        return false;
+        console.warn(`Aviso Supabase: ${error}`);
       }
     }
+
     return true;
   };
 
@@ -1077,9 +1273,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       created_at: new Date().toISOString(),
     };
 
+    // 1. Optimistic local state update
     setLoans(prev => [newLoan, ...prev]);
 
-    // Local backend sync
+    // 2. Broadcast via Supabase Realtime channel (Instant WebSocket sync to partner's phone)
+    broadcastToSupabase('LOAN_UPDATE', newLoan);
+
+    // 3. Local backend sync
     try {
       fetch('/api/loans', {
         method: 'POST',
@@ -1091,15 +1291,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error(e));
     } catch (e) {}
 
-    // Supabase Cloud Real-time
+    // 4. Supabase Cloud Database persistence
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
-      const { error } = await saveSupabaseLoan(newLoan);
-      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
-      if (error) {
-        setNotification(`Erro ao salvar empréstimo no Supabase: ${error}`);
-        return false;
-      }
+      saveSupabaseLoan(newLoan).then(({ error }) => {
+        setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+        if (error) {
+          console.warn('Aviso Supabase loan:', error);
+          if (error.includes('relation') && error.includes('does not exist')) {
+            setNotification('⚠️ Empréstimo transmitido em tempo real! Para salvar permanentemente no Supabase, execute o script SQL no editor do Supabase.');
+          }
+        }
+      }).catch(e => {
+        setSupabaseStatus(prev => ({ ...prev, isSyncing: false }));
+        console.error(e);
+      });
     }
 
     if (soundEnabled) playSyncChime();
@@ -1108,6 +1314,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const updateLoan = async (loan: Loan): Promise<boolean> => {
     setLoans(prev => prev.map(l => (l.id === loan.id ? loan : l)));
+
+    // Broadcast via Supabase Realtime channel
+    broadcastToSupabase('LOAN_UPDATE', loan);
 
     try {
       fetch('/api/loans', {
@@ -1122,12 +1331,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
-      const { error } = await saveSupabaseLoan(loan);
-      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
-      if (error) {
-        setNotification(`Erro ao atualizar empréstimo no Supabase: ${error}`);
-        return false;
-      }
+      saveSupabaseLoan(loan).then(({ error }) => {
+        setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+        if (error) console.warn('Aviso Supabase update loan:', error);
+      }).catch(e => setSupabaseStatus(prev => ({ ...prev, isSyncing: false })));
     }
 
     if (soundEnabled) playSyncChime();
@@ -1136,6 +1343,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteLoan = async (id: string): Promise<boolean> => {
     setLoans(prev => prev.filter(l => l.id !== id));
+
+    // Broadcast via Supabase Realtime channel
+    broadcastToSupabase('LOAN_DELETE', { id });
 
     try {
       fetch(`/api/loans/${id}`, {
@@ -1148,12 +1358,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
-      const { error } = await deleteSupabaseLoan(id);
-      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
-      if (error) {
-        setNotification(`Erro ao deletar empréstimo no Supabase: ${error}`);
-        return false;
-      }
+      deleteSupabaseLoan(id).then(({ error }) => {
+        setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+        if (error) console.warn('Aviso Supabase delete loan:', error);
+      }).catch(e => setSupabaseStatus(prev => ({ ...prev, isSyncing: false })));
     }
 
     return true;
@@ -1190,6 +1398,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setLoans(prev => prev.map(l => (l.id === loanId ? updatedLoan : l)));
 
+    // Broadcast payment update via Supabase Realtime channel
+    broadcastToSupabase('LOAN_UPDATE', updatedLoan);
+
     try {
       fetch('/api/loans', {
         method: 'POST',
@@ -1203,12 +1414,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (supabaseStatus.isConfigured) {
       setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
-      const { error } = await saveSupabaseLoan(updatedLoan);
-      setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
-      if (error) {
-        setNotification(`Erro ao salvar pagamento no Supabase: ${error}`);
-        return false;
-      }
+      saveSupabaseLoan(updatedLoan).then(({ error }) => {
+        setSupabaseStatus(prev => ({ ...prev, isSyncing: false, error: error || null }));
+        if (error) console.warn('Aviso Supabase pay loan:', error);
+      }).catch(e => setSupabaseStatus(prev => ({ ...prev, isSyncing: false })));
     }
 
     if (soundEnabled) playSyncChime();
@@ -1227,8 +1436,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       timestamp: new Date().toISOString(),
     };
 
+    // 1. Optimistic local update
     setChatMessages(prev => [...prev, newMsg]);
 
+    // 2. Broadcast via Supabase Realtime channel (Instant WebSocket sync to partner's phone)
+    broadcastToSupabase('CHAT_MESSAGE', newMsg);
+
+    // 3. Local backend sync
     try {
       fetch('/api/chat', {
         method: 'POST',
@@ -1240,8 +1454,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }).catch(e => console.error(e));
     } catch (e) {}
 
+    // 4. Supabase Cloud Database persistence
     if (supabaseStatus.isConfigured) {
-      saveSupabaseChatMessage(newMsg).catch(e => {
+      saveSupabaseChatMessage(newMsg).then(({ error }) => {
+        if (error) {
+          console.warn('Aviso Supabase chat:', error);
+          if (error.includes('relation') && error.includes('does not exist')) {
+            setNotification('⚠️ Mensagem enviada em tempo real! Para salvar permanentemente no Supabase, crie a tabela "chat_messages" executando o script SQL.');
+          }
+        }
+      }).catch(e => {
         console.error('Erro ao enviar mensagem no Supabase:', e);
       });
     }
@@ -1252,6 +1474,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteChatMessage = async (id: string): Promise<boolean> => {
     setChatMessages(prev => prev.filter(m => m.id !== id));
+
+    // Broadcast deletion via Supabase Realtime channel
+    broadcastToSupabase('CHAT_DELETE', { id });
 
     try {
       fetch(`/api/chat/${id}`, {

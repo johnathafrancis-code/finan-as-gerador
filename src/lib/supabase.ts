@@ -44,11 +44,53 @@ export function saveStoredSupabaseConfig(url: string, anonKey: string): void {
   );
   // Invalidate cached client
   cachedClient = null;
+
+  // Sync to shared backend server
+  syncSupabaseConfigToServer(trimmedUrl, trimmedKey);
 }
 
 export function clearStoredSupabaseConfig(): void {
   localStorage.removeItem(CONFIG_STORAGE_KEY);
   cachedClient = null;
+
+  // Sync deletion to shared backend server
+  deleteSupabaseConfigFromServer();
+}
+
+export async function syncSupabaseConfigToServer(url: string, anonKey: string): Promise<void> {
+  try {
+    await fetch('/api/supabase-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, anonKey }),
+    });
+  } catch (e) {
+    // Ignore server error if offline or dev
+  }
+}
+
+export async function deleteSupabaseConfigFromServer(): Promise<void> {
+  try {
+    await fetch('/api/supabase-config', {
+      method: 'DELETE',
+    });
+  } catch (e) {}
+}
+
+export async function fetchServerSupabaseConfig(): Promise<StoredSupabaseConfig | null> {
+  try {
+    const res = await fetch('/api/supabase-config');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.isConfigured && data.config?.url && data.config?.anonKey) {
+        return {
+          url: data.config.url,
+          anonKey: data.config.anonKey,
+        };
+      }
+    }
+  } catch (e) {}
+  return null;
 }
 
 export function getSupabaseClient(): SupabaseClient | null {

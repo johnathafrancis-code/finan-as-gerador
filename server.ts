@@ -29,6 +29,7 @@ const DATA_FILE = path.join(__dirname, 'transactions-data.json');
 const VAULT_FILE = path.join(__dirname, 'vault-data.json');
 const LOANS_FILE = path.join(__dirname, 'loans-data.json');
 const CHAT_FILE = path.join(__dirname, 'chat-data.json');
+const SUPABASE_CONFIG_FILE = path.join(__dirname, 'supabase-config.json');
 
 const INITIAL_DATA: TransactionItem[] = [];
 
@@ -36,6 +37,19 @@ let transactions: TransactionItem[] = [];
 let vaultGoals: any[] = [];
 let loans: any[] = [];
 let chatMessages: any[] = [];
+let supabaseConfig: { url: string; anonKey: string } | null = null;
+
+try {
+  if (fs.existsSync(SUPABASE_CONFIG_FILE)) {
+    const raw = fs.readFileSync(SUPABASE_CONFIG_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.url && parsed.anonKey) {
+      supabaseConfig = { url: parsed.url, anonKey: parsed.anonKey };
+    }
+  }
+} catch (e) {
+  supabaseConfig = null;
+}
 
 try {
   if (fs.existsSync(DATA_FILE)) {
@@ -114,6 +128,18 @@ function persistChat() {
     fs.writeFileSync(CHAT_FILE, JSON.stringify(chatMessages, null, 2));
   } catch (err) {
     console.error('Erro ao salvar chat-data.json', err);
+  }
+}
+
+function persistSupabaseConfig() {
+  try {
+    if (supabaseConfig) {
+      fs.writeFileSync(SUPABASE_CONFIG_FILE, JSON.stringify(supabaseConfig, null, 2));
+    } else if (fs.existsSync(SUPABASE_CONFIG_FILE)) {
+      fs.unlinkSync(SUPABASE_CONFIG_FILE);
+    }
+  } catch (err) {
+    console.error('Erro ao salvar supabase-config.json', err);
   }
 }
 
@@ -311,7 +337,12 @@ async function startServer() {
     if (!msg || !msg.id || !msg.text) {
       return res.status(400).json({ error: 'Mensagem inválida.' });
     }
-    chatMessages.push(msg);
+    const idx = chatMessages.findIndex(m => m.id === msg.id);
+    if (idx === -1) {
+      chatMessages.push(msg);
+    } else {
+      chatMessages[idx] = msg;
+    }
     persistChat();
     broadcast('CHAT_MESSAGE', { message: msg, messages: chatMessages }, req.headers['x-client-id'] as string);
     res.json({ success: true, message: msg });
@@ -323,6 +354,36 @@ async function startServer() {
     persistChat();
     broadcast('CHAT_DELETE', { id, messages: chatMessages }, req.headers['x-client-id'] as string);
     res.json({ success: true, id });
+  });
+
+  // 5e. Shared Supabase Config across all devices
+  app.get('/api/supabase-config', (req, res) => {
+    if (supabaseConfig && supabaseConfig.url && supabaseConfig.anonKey) {
+      res.json({ isConfigured: true, config: supabaseConfig });
+    } else {
+      res.json({ isConfigured: false, config: null });
+    }
+  });
+
+  app.post('/api/supabase-config', (req, res) => {
+    const { url, anonKey } = req.body || {};
+    if (!url || !anonKey) {
+      return res.status(400).json({ error: 'URL e Anon Key do Supabase são obrigatórios.' });
+    }
+    supabaseConfig = {
+      url: String(url).trim().replace(/\/+$/, ''),
+      anonKey: String(anonKey).trim(),
+    };
+    persistSupabaseConfig();
+    broadcast('SUPABASE_CONFIG_UPDATED', { config: supabaseConfig });
+    res.json({ success: true, config: supabaseConfig });
+  });
+
+  app.delete('/api/supabase-config', (req, res) => {
+    supabaseConfig = null;
+    persistSupabaseConfig();
+    broadcast('SUPABASE_CONFIG_CLEARED', {});
+    res.json({ success: true });
   });
 
   // 6. Real-time Server-Sent Events (SSE) stream for instant synchronization
