@@ -3,7 +3,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Transaction, TransactionType, TransactionOwner, PaymentMethod, TransactionStatus } from '../types/finance';
 import { DEFAULT_CATEGORIES, PAYMENT_METHOD_LABELS } from '../data/defaultData';
 import { getTodayString, addMonthsToDate, formatCurrency, formatMonthName } from '../utils/formatters';
-import { X, Check, ArrowDownLeft, ArrowUpRight, Users, CreditCard, Calendar } from 'lucide-react';
+import { X, Check, ArrowDownLeft, ArrowUpRight, CreditCard, Calendar } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -249,56 +249,37 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setOwner('partner1')}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`py-2.5 px-3 rounded-xl border text-center transition-all cursor-pointer font-medium text-xs sm:text-sm ${
                   owner === 'partner1'
                     ? 'bg-indigo-50 border-indigo-400 text-indigo-800 font-bold shadow-xs'
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                {partners.partner1Avatar ? (
-                  <img
-                    src={partners.partner1Avatar}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="w-5 h-5 rounded-full object-cover"
-                  />
-                ) : null}
-                <span className="truncate w-full">{partners.partner1Name}</span>
+                <span className="truncate block">{partners.partner1Name || 'Johnatha'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setOwner('partner2')}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`py-2.5 px-3 rounded-xl border text-center transition-all cursor-pointer font-medium text-xs sm:text-sm ${
                   owner === 'partner2'
                     ? 'bg-pink-50 border-pink-400 text-pink-800 font-bold shadow-xs'
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                {partners.partner2Avatar ? (
-                  <img
-                    src={partners.partner2Avatar}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="w-5 h-5 rounded-full object-cover"
-                  />
-                ) : null}
-                <span className="truncate w-full">{partners.partner2Name}</span>
+                <span className="truncate block">{partners.partner2Name || 'Raisa'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setOwner('shared')}
-                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                className={`py-2.5 px-3 rounded-xl border text-center transition-all cursor-pointer font-medium text-xs sm:text-sm ${
                   owner === 'shared'
                     ? 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-xs'
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                  <Users className="w-3 h-3" />
-                </div>
-                <span>Compartilhado</span>
+                <span className="truncate block">Compartilhado</span>
               </button>
             </div>
           </div>
